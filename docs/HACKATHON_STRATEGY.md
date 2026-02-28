@@ -27,6 +27,7 @@
 ## 1. Why the Obvious Ideas Won't Win <a name="why-v2"></a>
 
 Every LLM in 2026 tells every team the same thing:
+
 - "Use MIT-BIH ECG dataset with a quantized 1D-CNN"
 - "Use MSTAR with a Binary Neural Network"
 - "Use PlantVillage with MobileNet"
@@ -34,9 +35,10 @@ Every LLM in 2026 tells every team the same thing:
 These are **fine projects** but they are the **default answer**. Judges have seen 50 teams do quantized CNNs. You cannot "win by a huge margin" with an idea 10 other teams also have.
 
 **What actually wins:**
+
 - An approach the judges have **never seen at a hackathon before**
 - A computing paradigm that is **inherently more suited to FPGA** than neural networks
-- A paper-worthy contribution: *novel algorithm × novel hardware architecture × real application*
+- A paper-worthy contribution: _novel algorithm × novel hardware architecture × real application_
 
 ---
 
@@ -59,6 +61,7 @@ A brain-inspired computing model that represents all data as very long binary ve
 | **Similarity** (Hamming Distance) | Compare to class prototypes | XOR + popcount — pure LUTs |
 
 **Why this is FPGA gold:**
+
 - **ZERO multipliers, ZERO DSP blocks** — everything is XOR and popcount
 - 10,000-bit vectors process in **1-2 clock cycles** with full parallelism
 - Training is **single-pass** (no backpropagation) — you can even train ON the FPGA
@@ -69,6 +72,7 @@ A brain-inspired computing model that represents all data as very long binary ve
 **Paper potential:** VERY HIGH. Fewer than 20 papers exist on HDC+FPGA worldwide. Any new application domain is publishable at venues like DATE, DAC, ISLPED, IEEE TCAS, or IEEE Embedded Systems Letters.
 
 **Key references:**
+
 - Rahimi et al., "Hyperdimensional Computing for Efficient Classification" (Berkeley)
 - Imani et al., "HDC-FPGA: Accelerating Hyperdimensional Computing" (UCSD)
 
@@ -80,6 +84,7 @@ A brain-inspired computing model that represents all data as very long binary ve
 A recurrent neural network where the recurrent layer is **random and FIXED** (never trained). Only the output layer (a simple linear classifier) is trained. The random "reservoir" of neurons transforms the input time-series into a high-dimensional feature space.
 
 **Why this is FPGA gold:**
+
 - Random reservoir weights are fixed at synthesis time → hardcoded in LUTs/BRAM
 - Only the readout layer needs programmable weights → tiny weight memory
 - Naturally handles **temporal/sequential data** (audio, signals, time-series)
@@ -88,10 +93,12 @@ A recurrent neural network where the recurrent layer is **random and FIXED** (ne
 - Can process streaming data — perfect for real-time edge applications
 
 **FPGA Implementation:**
+
 ```
 Input → [Fixed Random Sparse Matrix × Input] → Tanh activation → Reservoir State
 Reservoir State → [Trainable Linear Readout] → Output Class
 ```
+
 The reservoir matrix is sparse (5-10% connectivity), so most multiplies are zero → very efficient in hardware.
 
 **Paper potential:** HIGH. RC on FPGA for real-world Edge AI applications is underexplored. Publishable at IJCNN, IEEE TNNLS, ISCAS.
@@ -104,6 +111,7 @@ The reservoir matrix is sparse (5-10% connectivity), so most multiplies are zero
 Neurons communicate via discrete spikes (events) rather than continuous values. A neuron accumulates input until it crosses a threshold, fires a spike, then resets. Information is encoded in spike **timing**, not magnitude.
 
 **Why this is FPGA gold:**
+
 - Computation is **event-driven** → zero power when no input activity (sparse)
 - Neuron state = single integer (membrane potential) + comparator (threshold)
 - Spikes are single-bit events → massive data compression
@@ -111,6 +119,7 @@ Neurons communicate via discrete spikes (events) rather than continuous values. 
 - Leaky Integrate-and-Fire (LIF) neuron is ~20 lines of Verilog
 
 **FPGA Implementation (per neuron):**
+
 ```verilog
 membrane_potential += weight * spike_in;   // Accumulate
 membrane_potential -= leak;                 // Leak
@@ -126,14 +135,14 @@ end
 
 ### Paradigm Comparison for This Hackathon:
 
-| Factor | HDC | Reservoir Computing | SNN |
-|---|:---:|:---:|:---:|
-| **RTL Simplicity** | ★★★★★ | ★★★★ | ★★★ |
-| **Hackathon Feasibility** | ★★★★★ | ★★★★ | ★★★ |
-| **Paper Novelty** | ★★★★★ | ★★★★ | ★★★★ |
-| **Accuracy vs CNN** | ~90-95% | ~92-96% | ~88-94% |
-| **FPGA Efficiency** | ★★★★★ | ★★★★ | ★★★★★ |
-| **Judge Surprise Factor** | ★★★★★ | ★★★★ | ★★★★ |
+| Factor                    |   HDC   | Reservoir Computing |   SNN   |
+| ------------------------- | :-----: | :-----------------: | :-----: |
+| **RTL Simplicity**        |  ★★★★★  |        ★★★★         |   ★★★   |
+| **Hackathon Feasibility** |  ★★★★★  |        ★★★★         |   ★★★   |
+| **Paper Novelty**         |  ★★★★★  |        ★★★★         |  ★★★★   |
+| **Accuracy vs CNN**       | ~90-95% |       ~92-96%       | ~88-94% |
+| **FPGA Efficiency**       |  ★★★★★  |        ★★★★         |  ★★★★★  |
+| **Judge Surprise Factor** |  ★★★★★  |        ★★★★         |  ★★★★   |
 
 **HDC is the sweet spot** — simplest RTL, highest novelty, near-CNN accuracy, ludicrously efficient on FPGA.
 
@@ -146,6 +155,7 @@ end
 ### 🌾 AGRICULTURE <a name="agriculture"></a>
 
 #### Idea A1: HDC-Based Multi-Sensor Crop Health Decision Engine
+
 - **Dataset:** Crop Recommendation Dataset (Kaggle, 2200 samples, 7 features: N, P, K, temperature, humidity, pH, rainfall → 22 crop classes)
 - **Model:** Hyperdimensional classifier with spatial + value encoding
 - **RTL:** XOR encoder → bundler → Hamming distance comparator → argmax
@@ -160,6 +170,7 @@ end
 - **Cons:** Tabular data is less visually impressive than images
 
 #### Idea A2: Reservoir Computing for Real-Time Pest Acoustic Detection
+
 - **Dataset:** STFT features from insect wing-beat recordings (Kaggle Mosquito dataset / custom from published entomology data)
 - **Model:** Echo State Network — random reservoir → linear readout classifying insect species from wing-beat frequency
 - **RTL:** Fixed sparse matrix multiply → tanh LUT → linear output
@@ -169,6 +180,7 @@ end
 - **Cons:** Niche dataset, may need synthetic augmentation
 
 #### Idea A3: SNN for Event-Camera-Based Pollinator Monitoring
+
 - **Dataset:** Synthetic spike trains from DAVIS event camera recordings of insects (publicly available neuromorphic datasets)
 - **Model:** Spiking Convolutional Network with LIF neurons
 - **RTL:** LIF neuron array → spike-based convolution → classification
@@ -184,6 +196,7 @@ end
 ### 🏥 BIOMEDICAL SYSTEMS <a name="biomedical"></a>
 
 #### Idea B1: HDC-Based EMG Hand Gesture Classifier for Prosthetic Control ⭐⭐ (TOP CONTENDER)
+
 - **Dataset:** Ninapro DB5 (2 sEMG channels, 52 hand gestures, publicly available) OR UCI EMG Dataset (4 classes, simpler)
 - **Model:** Hyperdimensional Computing
   - Temporal encoding: encode each EMG time window into a 10K-bit vector using N-gram encoding
@@ -222,6 +235,7 @@ end
   - Less familiar paradigm — need clear explanation for judges
 
 #### Idea B2: Reservoir Computing for Patient-Adaptive ECG Anomaly Detection
+
 - **Dataset:** MIT-BIH + PTB-XL (publicly available, large-scale ECG)
 - **Model:** Echo State Network with online learning readout
 - **RTL:** Fixed random reservoir (LFSR-generated, stored in BRAM) → streaming state update → ridge regression readout
@@ -236,6 +250,7 @@ end
 - **Cons:** Reservoir sizing/tuning needs experimentation, readout training circuit adds complexity
 
 #### Idea B3: SNN for Real-Time Neural Spike Sorting (Brain-Computer Interfaces)
+
 - **Dataset:** Wave_Clus benchmark dataset (simulated neural recordings, publicly available) / Quiroga synthetic data
 - **Model:** Spiking neural network that sorts raw electrode recordings into individual neuron identities
 - **RTL:** Bandpass filter → threshold crossing → LIF spike sorter → neuron ID output
@@ -245,6 +260,7 @@ end
 - **Cons:** Complex signal processing, niche expertise, harder to demo
 
 #### Idea B4: HDC for Sleep Stage Classification from Single-Channel EEG
+
 - **Dataset:** Sleep-EDF Expanded (PhysioNet, publicly available, 197 recordings)
 - **Model:** HDC temporal encoder on 30-second EEG epochs → 5-class sleep stage (W, N1, N2, N3, REM)
 - **RTL:** Feature extraction (FFT spectral bands) → HDC encode → classify
@@ -260,6 +276,7 @@ end
 ### 🚦 TRAFFIC MANAGEMENT <a name="traffic"></a>
 
 #### Idea T1: HDC for Multi-Sensor Intersection State Classification
+
 - **Dataset:** Simulated/synthetic intersection data combining: vehicle count (inductive loop), average speed (radar), queue length, time-of-day encoding → classify into states: {Free-flow, Approaching-congestion, Congested, Incident, Emergency-vehicle-present}
 - **Model:** HDC with multi-modal encoding — each sensor type gets a unique basis vector, values are level-encoded, then bound and bundled
 - **RTL:** Parallel encoders per sensor → XOR binding → majority bundle → Hamming classifier
@@ -269,6 +286,7 @@ end
 - **Cons:** Synthetic/simulated dataset (but can argue this is sensor-realistic)
 
 #### Idea T2: Reservoir Computing for Traffic Flow Prediction at Edge
+
 - **Dataset:** PeMS-BAY (public, 325 sensors, 6 months of 5-minute aggregated traffic flow data)
 - **Model:** Echo State Network for short-term (15-min) traffic flow prediction per sensor
 - **RTL:** Streaming reservoir → linear readout → threshold detector for congestion alert
@@ -278,6 +296,7 @@ end
 - **Cons:** Prediction accuracy of RC vs deep LSTM is debatable
 
 #### Idea T3: SNN for Acoustic Emergency Vehicle Detection
+
 - **Dataset:** Emergency Vehicle Siren Dataset (Kaggle) + UrbanSound8K for negative class
 - **Model:** SNN with rate-coded audio features → spike-based classifier
 - **RTL:** Mel filterbank → rate encoder → LIF network → siren/no-siren output
@@ -293,6 +312,7 @@ end
 ### ⚡ SMART ENERGY <a name="smart-energy"></a>
 
 #### Idea E1: HDC for Non-Intrusive Load Monitoring (NILM) with On-Device Learning
+
 - **Dataset:** REDD (Reference Energy Disaggregation Dataset, MIT, publicly available, 6 houses, 10+ appliances)
 - **Model:** HDC encodes current/voltage waveform signatures into hypervectors → classifies which appliance turned on/off
 - **RTL:** Streaming window encoder → HDC classify → on-device class prototype update (incremental learning)
@@ -306,6 +326,7 @@ end
 - **Cons:** NILM is niche, waveform signatures need careful feature engineering
 
 #### Idea E2: Reservoir Computing for Power Quality Disturbance Classification
+
 - **Dataset:** IEEE PES Power Quality Event dataset / synthetic PQ disturbances (sag, swell, harmonic, transient, interruption — 7+ classes)
 - **Model:** Echo State Network on voltage waveform windows
 - **RTL:** Fixed reservoir → linear classifier → disturbance type + start/end time
@@ -315,6 +336,7 @@ end
 - **Cons:** Power systems domain is niche for hackathon judges
 
 #### Idea E3: SNN for Always-On Occupancy Detection with Ultra-Low Power
+
 - **Dataset:** UCI Occupancy Detection + KTH Multimodal Dataset (PIR, CO2, sound, light)
 - **Model:** SNN where each sensor channel is a spike train (rate-coded) → LIF classifier
 - **RTL:** Spike encoders per sensor → LIF neuron layer → binary decision
@@ -330,6 +352,7 @@ end
 ### 🛡️ DEFENSE SYSTEMS <a name="defense"></a>
 
 #### Idea D1: HDC for RF Automatic Modulation Classification (Electronic Warfare) ⭐⭐⭐ (TOP CONTENDER)
+
 - **Dataset:** RadioML 2018.01A (DeepSig, publicly available, 24 modulation types, 2.5M+ I/Q signal samples at various SNRs)
 - **Model:** Hyperdimensional Computing
   - Encode I/Q time-series samples into hypervectors using temporal N-gram + level encoding
@@ -378,6 +401,7 @@ end
   - Need careful encoding design (N-gram length, quantization levels, D)
 
 #### Idea D2: Reservoir Computing for Radar Micro-Doppler Classification
+
 - **Dataset:** Synthetic micro-Doppler signatures (public tools: SimHumalator for human activity, or DopNet dataset) OR Ancortek radar open datasets
 - **Model:** Echo State Network on micro-Doppler spectrograms (time-frequency features)
 - **RTL:** STFT → fixed reservoir → trainable readout → target type (person walking, vehicle, drone, animal)
@@ -387,6 +411,7 @@ end
 - **Cons:** Micro-Doppler datasets are limited, may need synthetic generation, STFT adds RTL complexity
 
 #### Idea D3: SNN for Radar Pulse Deinterleaving (ELINT)
+
 - **Dataset:** Synthetic radar pulse train datasets (pulse descriptor words: TOA, PW, PRI, frequency, amplitude)
 - **Model:** SNN where each radar pulse is encoded as a spike event at its Time-of-Arrival → temporal pattern recognition separates interleaved radar sources
 - **RTL:** Spike encoder → temporal SNN with STDP-like fixed weights → cluster output (number of emitters + their PRI)
@@ -396,6 +421,7 @@ end
 - **Cons:** Complex problem, synthetic data, SNN training for this task is non-trivial
 
 #### Idea D4: HDC for Acoustic Gunshot/Explosion Localization & Classification
+
 - **Dataset:** SONYC Urban Sound Tagging + augmented military acoustic events / ESC-50 (environmental sound classification)
 - **Model:** HDC on Mel-frequency features + spatial encoding from microphone array
 - **RTL:** Mel filterbank → HDC encode per mic → spatial binding → classify + estimate angle-of-arrival
@@ -405,6 +431,7 @@ end
 - **Cons:** Microphone array processing adds complexity, military acoustic data is sparse
 
 #### Idea D5: HDC + Reservoir Hybrid for Multi-Domain Sensor Fusion
+
 - **Dataset:** Combine RadioML (RF) + acoustic + motion sensor data (custom fusion)
 - **Model:** Reservoir for temporal feature extraction → HDC for multi-modal fusion and classification
 - **RTL:** Per-sensor reservoir → HDC binding of reservoir states → Hamming classifier
@@ -421,23 +448,24 @@ end
 
 Scoring only the TOP idea per domain:
 
-| Criteria | Agriculture (HDC Crop) | Biomedical (HDC EMG) | Traffic (HDC Multi-Sensor) | Smart Energy (HDC NILM) | Defense (HDC AMC) |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **Paper Publishability** | ★★★★ | ★★★★★ | ★★★ | ★★★★ | ★★★★★ |
-| **RTL Simplicity** | ★★★★★ | ★★★★★ | ★★★★ | ★★★★ | ★★★★★ |
-| **Dataset Quality** | ★★★ | ★★★★ | ★★ | ★★★★ | ★★★★★ |
-| **Judge WOW Factor** | ★★★ | ★★★★★ | ★★★ | ★★★ | ★★★★★ |
-| **Edge AI Narrative** | ★★★★ | ★★★★★ | ★★★★ | ★★★★ | ★★★★★ |
-| **Hackathon Completeness** | ★★★★★ | ★★★★★ | ★★★★ | ★★★★ | ★★★★★ |
-| **Competition Uniqueness** | ★★★★ | ★★★★★ | ★★★★ | ★★★★ | ★★★★★ |
-| **Industry Credibility** | ★★★ | ★★★★ | ★★★ | ★★★ | ★★★★★ |
-| **TOTAL** | **31/40** | **37/40** | **27/40** | **30/40** | **40/40** |
+| Criteria                   | Agriculture (HDC Crop) | Biomedical (HDC EMG) | Traffic (HDC Multi-Sensor) | Smart Energy (HDC NILM) | Defense (HDC AMC) |
+| -------------------------- | :--------------------: | :------------------: | :------------------------: | :---------------------: | :---------------: |
+| **Paper Publishability**   |          ★★★★          |        ★★★★★         |            ★★★             |          ★★★★           |       ★★★★★       |
+| **RTL Simplicity**         |         ★★★★★          |        ★★★★★         |            ★★★★            |          ★★★★           |       ★★★★★       |
+| **Dataset Quality**        |          ★★★           |         ★★★★         |             ★★             |          ★★★★           |       ★★★★★       |
+| **Judge WOW Factor**       |          ★★★           |        ★★★★★         |            ★★★             |           ★★★           |       ★★★★★       |
+| **Edge AI Narrative**      |          ★★★★          |        ★★★★★         |            ★★★★            |          ★★★★           |       ★★★★★       |
+| **Hackathon Completeness** |         ★★★★★          |        ★★★★★         |            ★★★★            |          ★★★★           |       ★★★★★       |
+| **Competition Uniqueness** |          ★★★★          |        ★★★★★         |            ★★★★            |          ★★★★           |       ★★★★★       |
+| **Industry Credibility**   |          ★★★           |         ★★★★         |            ★★★             |           ★★★           |       ★★★★★       |
+| **TOTAL**                  |       **31/40**        |      **37/40**       |         **27/40**          |        **30/40**        |     **40/40**     |
 
 ---
 
 ## 5. 🏆 FINAL RECOMMENDATION <a name="recommendation"></a>
 
 ### PRIMARY: Defense — HDC for RF Automatic Modulation Classification (RadioML)
+
 ### BACKUP: Biomedical — HDC for EMG Gesture Recognition (Ninapro/UCI)
 
 ---
@@ -448,7 +476,8 @@ Scoring only the TOP idea per domain:
 Ask any LLM "what should I do for an FPGA Edge AI hackathon in defense?" and you get MSTAR + BNN. Our approach uses a computing paradigm (HDC) that most CS students haven't heard of, on a problem (AMC) that is genuine defense research, with a dataset (RadioML) that is pristine and hugely cited. Zero other teams will have this combination.
 
 **2. The paper practically writes itself.**
-Title: *"Sub-Microsecond Automatic Modulation Classification Using Hyperdimensional Computing on FPGA"*
+Title: _"Sub-Microsecond Automatic Modulation Classification Using Hyperdimensional Computing on FPGA"_
+
 - Contribution 1: First HDC-based AMC on FPGA
 - Contribution 2: Comprehensive comparison (HDC vs CNN vs SVM) on RadioML for latency, power, accuracy, area
 - Contribution 3: Dimension scaling analysis (accuracy-efficiency Pareto front)
@@ -457,6 +486,7 @@ Title: *"Sub-Microsecond Automatic Modulation Classification Using Hyperdimensio
 
 **3. The hardware metrics will be obscene.**
 Other teams doing CNNs will report microsecond latency and milliwatt power. You'll report:
+
 - **< 500 nanosecond** latency (1000× faster than CNN-on-FPGA)
 - **< 10 milliwatt** power (100× less than CNN-on-FPGA)
 - **0 DSP blocks** (while CNN teams use dozens)
@@ -468,6 +498,7 @@ When the judge asks "why not just use a CNN?", you pull out the comparison table
 Electronic warfare, cognitive radio, spectrum awareness — these are Tier-1 defense research priorities. RadioML was literally created by DARPA-funded researchers. Telling judges "we built a passive RF signal classifier for electronic warfare that runs on sub-milliwatt power" is the kind of statement that makes defense-industry judges want to recruit you.
 
 **5. Rich experimental dimensions = rich results.**
+
 - 24 modulation classes → detailed per-class accuracy
 - Multiple SNR levels (-20dB to +30dB) → robustness curves
 - Variable D (1K to 10K) → accuracy vs efficiency tradeoff
@@ -479,6 +510,7 @@ Electronic warfare, cognitive radio, spectrum awareness — these are Tier-1 def
 ### Why Biomedical (HDC EMG) is the Strong Backup:
 
 If the team prefers biomedical or finds RadioML preprocessing tricky:
+
 - EMG data is simpler to work with (direct sensor readings)
 - Prosthetics narrative is universally compelling
 - On-device personalization (patient-adaptive learning) is a unique HDC strength
@@ -495,6 +527,7 @@ If the team prefers biomedical or finds RadioML preprocessing tricky:
 ### For PRIMARY (HDC AMC on RadioML):
 
 #### Phase 1: Python Prototype (Days 1-3)
+
 ```
 1. Download RadioML 2018.01A from DeepSig (free for research)
 2. Load I/Q samples (2×1024 per example, 24 classes, multiple SNRs)
@@ -511,6 +544,7 @@ If the team prefers biomedical or finds RadioML preprocessing tricky:
 ```
 
 #### Phase 2: RTL Design (Days 3-6)
+
 ```
 1. HDC Encoder Module:
    - Input: 8-bit I/Q sample pairs (streaming)
@@ -542,6 +576,7 @@ If the team prefers biomedical or finds RadioML preprocessing tricky:
 ```
 
 #### Phase 3: FPGA Synthesis & Benchmarking (Days 6-8)
+
 ```
 1. Target: Artix-7 (XC7A100T) or Zynq-7020
 2. Vivado synthesis + implementation
@@ -553,6 +588,7 @@ If the team prefers biomedical or finds RadioML preprocessing tricky:
 ```
 
 #### Phase 4: Paper-Quality Results & Demo (Days 8-10)
+
 ```
 1. Accuracy vs. SNR plot (RadioML standard evaluation)
 2. Accuracy vs. Dimension D plot (Pareto curve)
@@ -566,20 +602,21 @@ If the team prefers biomedical or finds RadioML preprocessing tricky:
 
 ### HDC RTL Module Complexity Estimate:
 
-| Module | Verilog Lines | Primary Resources | Difficulty |
-|---|---|---|---|
-| Level Quantizer | ~20 | Combinational logic | Easy |
-| Level Codebook ROM | ~30 | BRAM / distributed ROM | Easy |
-| N-gram XOR Chain | ~40 | D-bit register + XOR | Easy |
-| Window Bundler | ~60 | D counters + comparators | Medium |
-| Hamming Distance (per class) | ~30 | XOR + popcount tree | Easy |
-| Parallel Classifier (24 classes) | ~80 | 24× Hamming + comparator tree | Medium |
-| Top-Level Pipeline | ~50 | Wiring + control FSM | Easy |
-| **TOTAL** | **~310 lines** | **LUTs + BRAM only** | **Very achievable** |
+| Module                           | Verilog Lines  | Primary Resources             | Difficulty          |
+| -------------------------------- | -------------- | ----------------------------- | ------------------- |
+| Level Quantizer                  | ~20            | Combinational logic           | Easy                |
+| Level Codebook ROM               | ~30            | BRAM / distributed ROM        | Easy                |
+| N-gram XOR Chain                 | ~40            | D-bit register + XOR          | Easy                |
+| Window Bundler                   | ~60            | D counters + comparators      | Medium              |
+| Hamming Distance (per class)     | ~30            | XOR + popcount tree           | Easy                |
+| Parallel Classifier (24 classes) | ~80            | 24× Hamming + comparator tree | Medium              |
+| Top-Level Pipeline               | ~50            | Wiring + control FSM          | Easy                |
+| **TOTAL**                        | **~310 lines** | **LUTs + BRAM only**          | **Very achievable** |
 
 Compare: a CNN inference engine is typically **2000-5000+ lines of Verilog**. HDC is 6-15× simpler.
 
 ### Tools:
+
 - **Training:** Python + NumPy (HDC libraries: torchhd, or custom — it's ~100 lines of Python)
 - **RTL:** SystemVerilog / Verilog (hand-coded, no HLS needed — it's that simple)
 - **Simulation:** Vivado Simulator or Icarus Verilog (free)
@@ -590,14 +627,14 @@ Compare: a CNN inference engine is typically **2000-5000+ lines of Verilog**. HD
 
 ## Summary: Why This Wins By a Huge Margin
 
-| Dimension | Typical Hackathon Team | Our Team |
-|---|---|---|
-| **Algorithm** | Quantized CNN (everyone does this) | Hyperdimensional Computing (nobody does this) |
-| **RTL Complexity** | 2000-5000 lines, DSP-heavy | ~310 lines, zero DSP |
-| **Inference Latency** | 1-100 microseconds | < 500 **nanoseconds** |
-| **Power** | 100-500 milliwatts | < 10 milliwatts |
-| **Completeness Risk** | High (CNN RTL is complex) | Low (HDC RTL is trivial) |
-| **Paper Potential** | Low (well-explored) | Very High (< 5 papers exist on HDC+AMC+FPGA) |
-| **Judge Reaction** | "Nice, another CNN on FPGA" | "Wait, this isn't even a neural network? And it's faster?" |
+| Dimension             | Typical Hackathon Team             | Our Team                                                   |
+| --------------------- | ---------------------------------- | ---------------------------------------------------------- |
+| **Algorithm**         | Quantized CNN (everyone does this) | Hyperdimensional Computing (nobody does this)              |
+| **RTL Complexity**    | 2000-5000 lines, DSP-heavy         | ~310 lines, zero DSP                                       |
+| **Inference Latency** | 1-100 microseconds                 | < 500 **nanoseconds**                                      |
+| **Power**             | 100-500 milliwatts                 | < 10 milliwatts                                            |
+| **Completeness Risk** | High (CNN RTL is complex)          | Low (HDC RTL is trivial)                                   |
+| **Paper Potential**   | Low (well-explored)                | Very High (< 5 papers exist on HDC+AMC+FPGA)               |
+| **Judge Reaction**    | "Nice, another CNN on FPGA"        | "Wait, this isn't even a neural network? And it's faster?" |
 
-**The pitch:** *"We classified 24 radio modulation types in 400 nanoseconds using 8 milliwatts — without a single neural network neuron or hardware multiplier. This is Hyperdimensional Computing on FPGA, and it's the future of electronic warfare at the edge."*
+**The pitch:** _"We classified 24 radio modulation types in 400 nanoseconds using 8 milliwatts — without a single neural network neuron or hardware multiplier. This is Hyperdimensional Computing on FPGA, and it's the future of electronic warfare at the edge."_
