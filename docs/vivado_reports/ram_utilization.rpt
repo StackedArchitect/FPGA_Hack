@@ -1,0 +1,31 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+---------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2024.2 (win64) Build 5239630 Fri Nov 08 22:35:27 MST 2024
+| Date         : Tue Mar 24 21:40:50 2026
+| Host         : DESKTOP-EK3KMT5 running 64-bit major release  (build 9200)
+| Command      : report_ram_utilization -file C:/Users/ADMIN/Desktop/vivado_reports/ram_utilization.rpt
+| Design       : system_top
+| Device       : xc7z020clg484-1
+| Speed File   : -1
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+RAM Usage Information
+
+Table of Contents
+-----------------
+1. Summary
+
+1. Summary
+----------
+
++--------------------------+------------+-----------+-------+-----------+
+| Memory Type              | Total Used | Available | Util% | Inferred% |
++--------------------------+------------+-----------+-------+-----------+
+| BlockRAM                 |          0 |       140 |  0.00 |      0.00 |
+| LUTMs as Distributed RAM |          0 |     17400 |  0.00 |      0.00 |
++--------------------------+------------+-----------+-------+-----------+
+*  Each RAMB18 is calculated as 0.5 BlockRAM
+**  Tables 2, 3, 4 and 5 cover RAMs inferred by Vivado Synthesis using XPMs or RTL inference
+***  XRAMs are not reported for detailed tables
+
+

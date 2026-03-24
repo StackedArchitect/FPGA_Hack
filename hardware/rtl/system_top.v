@@ -1,280 +1,233 @@
-// ============================================================
-// System Top — Board-level integration for Nexys A7-100T
-// ============================================================
-// Wires UART interface to HDC core for live demo.
+// =============================================================================
+// WaveBNN-ECG: System Top (ZC702 Evaluation Board)
+// =============================================================================
 //
-// Protocol (host → FPGA via UART):
-//   Byte 0: Command
-//     0x01 = New window (reset and start)
-//     0x02 = Load sample (followed by 2 bytes: amplitude, phase-diff)
-//     0x03 = Classify (trigger classification after all samples loaded)
-//   After command 0x02: next 2 bytes are amplitude[7:0], phase_diff[7:0]
-//   After command 0x03: FPGA sends back result byte (class_id)
+// Protocol:
+//   PC -> FPGA: 187 bytes (int8 ECG samples, unsigned over UART)
+//   FPGA -> PC: 1 byte (class 0-4)
 //
-// LED[3:0] = result class (binary)
-// LED[15:8] = sample count
-// LED[7:4] = state indicator
-// 7-segment display: shows class number (optional)
+// Data flow:
+//   uart_rx -> sample counter -> wavebnn_core -> uart_tx
 //
-// Target: Nexys A7-100T (XC7A100TCSG324-1)
-// CLK: 100 MHz from onboard oscillator
-// Reset: BTNC (active high → active low internally)
-// UART: USB-UART bridge (RX/TX on JA PMOD or built-in USB port)
-// ============================================================
+// Status LEDs:
+//   led[0] = alive (heartbeat blink ~1 Hz)
+//   led[1] = busy (inference running)
+//   led[2] = done (last result valid)
+//   led[3] = rx_activity (blink on byte received)
+//
+// Target: ZC702 (xc7z020clg484-1) @ 200 MHz LVDS input, 100 MHz via MMCM
+// =============================================================================
 
-module system_top #(
-    // HDC Parameters (match Python-exported values)
-    parameter INPUT_W      = 8,
-    parameter Q_BITS       = 4,
-    parameter CHUNK_W      = 32,
-    parameter NUM_CHUNKS   = 128,
-    parameter CHUNK_ADDR_W = 7,
-    parameter CB_DEPTH     = 2048,
-    parameter CB_ADDR_W    = 11,
-    parameter COUNTER_W    = 8,
-    parameter WINDOW_SIZE  = 128,
-    parameter NUM_CLASSES  = 11,
-    parameter CLASS_W      = 4,
-    parameter DIST_W       = 13,
-    parameter PROTO_DEPTH  = 1408,
-    parameter PROTO_ADDR_W = 11,
-    // UART
-    parameter CLK_FREQ     = 100_000_000,
-    parameter BAUD_RATE    = 115200,
-    // Memory init files
-    parameter CB_A_HEX     = "codebook_i.hex",
-    parameter CB_B_HEX     = "codebook_q.hex",
-    parameter PROTO_HEX    = "prototypes.hex"
-)(
-    input  wire        CLK100MHZ,       // 100 MHz system clock
-    input  wire        BTNC,            // Center button (reset, active high)
+module system_top (
+    input  wire       sys_clk_p,     // 200 MHz LVDS+ (ZC702 Bank 35)
+    input  wire       sys_clk_n,     // 200 MHz LVDS-
+    input  wire       rst_n_btn,     // active-low pushbutton (GPIO_SW_N)
 
-    // UART (directly from USB-UART bridge on Nexys A7)
-    input  wire        UART_TXD_IN,     // UART RX (from PC → FPGA)
-    output wire        UART_RXD_OUT,    // UART TX (from FPGA → PC)
+    // -- UART (PMOD1 J62) --
+    input  wire       uart_rxd,      // UART RX (from PC)
+    output wire       uart_txd,      // UART TX (to PC)
 
-    // LEDs
-    output reg  [15:0] LED,
-
-    // 7-segment (accent display, active low)
-    output reg  [6:0]  SEG,            // Segments a-g
-    output reg  [7:0]  AN              // Anode enables (active low)
+    // -- Status LEDs (DS15-DS18) --
+    output wire [3:0] led
 );
 
-    wire clk = CLK100MHZ;
-    wire rst_n = ~BTNC;  // Active-low reset
+    // ---------------------------------------------
+    // Clock generation: 200 MHz LVDS -> 100 MHz via MMCM
+    // In simulation, bypass IBUFDS+MMCM (TB provides 100 MHz directly)
+    // ---------------------------------------------
+    wire clk_100, clk_fb, mmcm_locked;
 
-    // ================================================================
+`ifdef SIMULATION
+    // ── Simulation bypass: TB drives 100 MHz on sys_clk_p port ──
+    assign clk_100     = sys_clk_p;
+    assign mmcm_locked = 1'b1;
+`else
+    // ── Synthesis: IBUFDS + MMCM ──
+    wire clk_200;
+    IBUFDS u_ibufds (
+        .I  (sys_clk_p),
+        .IB (sys_clk_n),
+        .O  (clk_200)
+    );
+
+    MMCME2_BASE #(
+        .CLKIN1_PERIOD  (5.000),   // 200 MHz = 5 ns
+        .CLKFBOUT_MULT_F(5.0),    // VCO = 200 * 5 = 1000 MHz
+        .CLKOUT0_DIVIDE_F(10.0)   // 1000 / 10 = 100 MHz
+    ) u_mmcm (
+        .CLKIN1  (clk_200),
+        .CLKFBIN (clk_fb),
+        .CLKFBOUT(clk_fb),
+        .CLKOUT0 (clk_100),
+        .LOCKED  (mmcm_locked),
+        .PWRDWN  (1'b0),
+        .RST     (~rst_n_btn)
+    );
+`endif
+
+    wire clk = clk_100;
+
+    // --- Reset synchronizer ---
+    reg [2:0] rst_sync;
+    wire rst_n = rst_sync[2];
+
+    always @(posedge clk or negedge mmcm_locked) begin
+        if (!mmcm_locked)
+            rst_sync <= 3'b000;
+        else
+            rst_sync <= {rst_sync[1:0], 1'b1};
+    end
+
+    // ---------------------------------------------
     // UART RX
-    // ================================================================
-    wire [7:0] rx_data;
+    // ---------------------------------------------
     wire       rx_valid;
+    wire [7:0] rx_data;
 
     uart_rx #(
-        .CLK_FREQ (CLK_FREQ),
-        .BAUD_RATE(BAUD_RATE)
+        .CLK_FREQ  (100_000_000),
+        .BAUD_RATE (115_200)
     ) u_uart_rx (
-        .clk      (clk),
-        .rst_n    (rst_n),
-        .rx       (UART_TXD_IN),
-        .data_out (rx_data),
-        .data_valid(rx_valid)
+        .clk    (clk),
+        .rst_n  (rst_n),
+        .i_rx   (uart_rxd),
+        .o_valid(rx_valid),
+        .o_data (rx_data)
     );
 
-    // ================================================================
-    // UART TX
-    // ================================================================
-    reg  [7:0] tx_data;
-    reg        tx_start;
-    wire       tx_busy;
+    // ---------------------------------------------
+    // Sample ingestion: collect 187 bytes -> start inference
+    // ---------------------------------------------
+    localparam NUM_SAMPLES = 187;
 
-    uart_tx #(
-        .CLK_FREQ (CLK_FREQ),
-        .BAUD_RATE(BAUD_RATE)
-    ) u_uart_tx (
-        .clk      (clk),
-        .rst_n    (rst_n),
-        .data_in  (tx_data),
-        .data_valid(tx_start),
-        .tx       (UART_RXD_OUT),
-        .busy     (tx_busy)
-    );
+    reg [7:0] sample_cnt;
+    reg       core_start;
+    reg       core_sample_valid;
+    (* max_fanout = 32 *)
+    reg signed [7:0] core_sample;
 
-    // ================================================================
-    // HDC Core
-    // ================================================================
-    reg                new_window;
-    reg                sample_valid;
-    reg  [INPUT_W-1:0] amp_reg;
-    reg  [INPUT_W-1:0] pdiff_reg;
-
-    wire [CLASS_W-1:0] result_class;
-    wire [DIST_W-1:0]  result_dist;
-    wire               result_valid_hdc;
-    wire               hdc_busy;
-    wire [7:0]         sample_count;
-
-    hdc_core #(
-        .INPUT_W     (INPUT_W),
-        .Q_BITS      (Q_BITS),
-        .CHUNK_W     (CHUNK_W),
-        .NUM_CHUNKS  (NUM_CHUNKS),
-        .CHUNK_ADDR_W(CHUNK_ADDR_W),
-        .CB_DEPTH    (CB_DEPTH),
-        .CB_ADDR_W   (CB_ADDR_W),
-        .COUNTER_W   (COUNTER_W),
-        .WINDOW_SIZE (WINDOW_SIZE),
-        .NUM_CLASSES (NUM_CLASSES),
-        .CLASS_W     (CLASS_W),
-        .DIST_W      (DIST_W),
-        .PROTO_DEPTH (PROTO_DEPTH),
-        .PROTO_ADDR_W(PROTO_ADDR_W),
-        .CB_A_HEX    (CB_A_HEX),
-        .CB_B_HEX    (CB_B_HEX),
-        .PROTO_HEX   (PROTO_HEX)
-    ) u_hdc_core (
-        .clk         (clk),
-        .rst_n       (rst_n),
-        .new_window  (new_window),
-        .sample_valid(sample_valid),
-        .amp_in      (amp_reg),
-        .pdiff_in    (pdiff_reg),
-        .result_class(result_class),
-        .result_dist (result_dist),
-        .result_valid(result_valid_hdc),
-        .busy        (hdc_busy),
-        .sample_count(sample_count)
-    );
-
-    // ================================================================
-    // Command Protocol FSM
-    // ================================================================
-    localparam CMD_NEW_WINDOW = 8'h01;
-    localparam CMD_LOAD_SAMPLE = 8'h02;
-    localparam CMD_CLASSIFY   = 8'h03;
-
-    localparam P_IDLE     = 3'd0;
-    localparam P_CMD      = 3'd1;
-    localparam P_AMP      = 3'd2;  // Waiting for amplitude byte
-    localparam P_PDIFF    = 3'd3;  // Waiting for phase-diff byte
-    localparam P_CLASSIFY = 3'd4;  // Waiting for classification result
-    localparam P_SEND     = 3'd5;  // Sending result via UART
-
-    reg [2:0] proto_state;
-    reg [CLASS_W-1:0] last_result;
-    reg [DIST_W-1:0]  last_dist;
+    wire core_busy;
+    wire core_done;
+    wire [2:0] core_class;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            proto_state  <= P_IDLE;
-            new_window   <= 1'b0;
-            sample_valid <= 1'b0;
-            amp_reg      <= 0;
-            pdiff_reg    <= 0;
-            tx_data      <= 0;
-            tx_start     <= 1'b0;
-            last_result  <= 0;
-            last_dist    <= 0;
+            sample_cnt        <= 8'd0;
+            core_start        <= 1'b0;
+            core_sample_valid <= 1'b0;
+            core_sample       <= 8'sd0;
         end else begin
-            new_window   <= 1'b0;
-            sample_valid <= 1'b0;
-            tx_start     <= 1'b0;
+            core_start        <= 1'b0;
+            core_sample_valid <= 1'b0;
 
-            case (proto_state)
-                P_IDLE: begin
-                    if (rx_valid) begin
-                        case (rx_data)
-                            CMD_NEW_WINDOW: begin
-                                new_window <= 1'b1;
-                                proto_state <= P_IDLE;
-                            end
-                            CMD_LOAD_SAMPLE: begin
-                                proto_state <= P_AMP;
-                            end
-                            CMD_CLASSIFY: begin
-                                proto_state <= P_CLASSIFY;
-                            end
-                            default: proto_state <= P_IDLE;
-                        endcase
-                    end
+            // FIX: Allow ingestion to continue even if core_busy is 1, as long as we are
+            // in the middle of our 187-sample streak. 
+            if (rx_valid && (!core_busy || sample_cnt != 8'd0)) begin
+                // Reinterpret unsigned UART byte as signed int8
+                core_sample       <= $signed(rx_data);
+                core_sample_valid <= 1'b1;
+
+                if (sample_cnt == 0) begin
+                    // First byte -> start wavelet ingestion
+                    core_start <= 1'b1;
                 end
 
-                P_AMP: begin
-                    if (rx_valid) begin
-                        amp_reg <= rx_data;
-                        proto_state <= P_PDIFF;
-                    end
-                end
-
-                P_PDIFF: begin
-                    if (rx_valid) begin
-                        pdiff_reg    <= rx_data;
-                        sample_valid <= 1'b1;
-                        proto_state  <= P_IDLE;
-                    end
-                end
-
-                P_CLASSIFY: begin
-                    if (result_valid_hdc) begin
-                        last_result <= result_class;
-                        last_dist   <= result_dist;
-                        // Send result byte (class ID)
-                        tx_data <= {{(8-CLASS_W){1'b0}}, result_class};
-                        tx_start <= 1'b1;
-                        proto_state <= P_SEND;
-                    end
-                end
-
-                P_SEND: begin
-                    if (!tx_busy) begin
-                        proto_state <= P_IDLE;
-                    end
-                end
-
-                default: proto_state <= P_IDLE;
-            endcase
+                if (sample_cnt == NUM_SAMPLES - 1)
+                    sample_cnt <= 8'd0;
+                else
+                    sample_cnt <= sample_cnt + 8'd1;
+            end
         end
     end
 
-    // ================================================================
-    // LED Display
-    // ================================================================
-    always @(posedge clk) begin
-        LED[3:0]   <= {{(4-CLASS_W){1'b0}}, last_result};  // Class result
-        LED[7:4]   <= {hdc_busy, proto_state};              // Status
-        LED[15:8]  <= sample_count;                          // Sample count
+    // ---------------------------------------------
+    // WaveBNN Inference Core
+    // ---------------------------------------------
+
+    wavebnn_core u_core (
+        .clk            (clk),
+        .rst_n          (rst_n),
+        .i_start        (core_start),
+        .i_sample       (core_sample),
+        .i_sample_valid (core_sample_valid),
+        .o_busy         (core_busy),
+        .o_done         (core_done),
+        .o_class        (core_class)
+    );
+
+    // ---------------------------------------------
+    // UART TX: send result
+    // ---------------------------------------------
+    reg       tx_valid;
+    reg [7:0] tx_data;
+    wire      tx_busy;
+    reg [2:0] last_class;
+    reg       result_ready;
+
+    uart_tx #(
+        .CLK_FREQ  (100_000_000),
+        .BAUD_RATE (115_200)
+    ) u_uart_tx (
+        .clk    (clk),
+        .rst_n  (rst_n),
+        .i_valid(tx_valid),
+        .i_data (tx_data),
+        .o_tx   (uart_txd),
+        .o_busy (tx_busy)
+    );
+
+    // Latch result and send when TX is free
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            tx_valid     <= 1'b0;
+            tx_data      <= 8'd0;
+            last_class   <= 3'd0;
+            result_ready <= 1'b0;
+        end else begin
+            tx_valid <= 1'b0;
+
+            if (core_done) begin
+                last_class   <= core_class;
+                result_ready <= 1'b1;
+            end
+
+            if (result_ready && !tx_busy) begin
+                tx_valid     <= 1'b1;
+                tx_data      <= {5'd0, last_class};
+                result_ready <= 1'b0;
+            end
+        end
     end
 
-    // ================================================================
-    // 7-Segment Display — Show class number
-    // ================================================================
-    // Simple hex display on rightmost digit
-    reg [3:0] hex_digit;
+    // ---------------------------------------------
+    // Status LEDs
+    // ---------------------------------------------
+    reg [26:0] heartbeat_cnt;
+    reg        rx_activity;
+    reg [19:0] rx_blink_cnt;
 
-    always @(*) begin
-        hex_digit = last_result[3:0];
-        // 7-segment decoder (active low, pattern: gfedcba)
-        case (hex_digit)
-            4'h0: SEG = 7'b1000000;
-            4'h1: SEG = 7'b1111001;
-            4'h2: SEG = 7'b0100100;
-            4'h3: SEG = 7'b0110000;
-            4'h4: SEG = 7'b0011001;
-            4'h5: SEG = 7'b0010010;
-            4'h6: SEG = 7'b0000010;
-            4'h7: SEG = 7'b1111000;
-            4'h8: SEG = 7'b0000000;
-            4'h9: SEG = 7'b0010000;
-            4'hA: SEG = 7'b0001000;
-            4'hB: SEG = 7'b0000011;
-            4'hC: SEG = 7'b1000110;
-            4'hD: SEG = 7'b0100001;
-            4'hE: SEG = 7'b0000110;
-            4'hF: SEG = 7'b0001110;
-            default: SEG = 7'b1111111;
-        endcase
-        // Enable only rightmost digit
-        AN = 8'b11111110;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            heartbeat_cnt <= 27'd0;
+            rx_activity   <= 1'b0;
+            rx_blink_cnt  <= 20'd0;
+        end else begin
+            heartbeat_cnt <= heartbeat_cnt + 1;
+
+            if (rx_valid) begin
+                rx_activity  <= 1'b1;
+                rx_blink_cnt <= 20'hFFFFF;
+            end else if (rx_blink_cnt != 0) begin
+                rx_blink_cnt <= rx_blink_cnt - 1;
+            end else begin
+                rx_activity <= 1'b0;
+            end
+        end
     end
+
+    assign led[0] = heartbeat_cnt[26];     // ~0.75 Hz blink
+    assign led[1] = core_busy;             // inference active
+    assign led[2] = result_ready | core_done; // result available
+    assign led[3] = rx_activity;           // RX activity
 
 endmodule

@@ -1,105 +1,116 @@
 """
-HDC-AMC Configuration
-Hyperparameters and paths for Hyperdimensional Computing
-Automatic Modulation Classification on FPGA.
-
-Target Board: Nexys A7-100T (XC7A100TCSG324-1)
+WaveBNN-ECG Configuration
+=========================
+All hyperparameters and paths for Wavelet + BNN ECG Arrhythmia Detection.
+Target Board: PYNQ-Z2 (Zynq-7020, xc7z020clg484-1)
 """
 
 import os
 
-# ============================================================
+# ────────────────────────────────────────────────────────────
 # Paths
-# ============================================================
+# ────────────────────────────────────────────────────────────
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(PROJECT_ROOT, "data")
-RESULTS_DIR = os.path.join(PROJECT_ROOT, "results")
+DATA_DIR     = os.path.join(PROJECT_ROOT, "data")
+RESULTS_DIR  = os.path.join(PROJECT_ROOT, "results")
+MODELS_DIR   = os.path.join(PROJECT_ROOT, "models")
 HARDWARE_DIR = os.path.join(os.path.dirname(PROJECT_ROOT), "hardware")
-EXPORT_DIR = os.path.join(HARDWARE_DIR, "tb", "test_vectors")
+EXPORT_DIR   = os.path.join(HARDWARE_DIR, "tb", "test_vectors")
 
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(RESULTS_DIR, exist_ok=True)
-os.makedirs(EXPORT_DIR, exist_ok=True)
+for _d in [DATA_DIR, RESULTS_DIR, MODELS_DIR]:
+    os.makedirs(_d, exist_ok=True)
 
-
-# ============================================================
-# HDC Hyperparameters
-# ============================================================
-D = 4096              # Hypervector dimension (bits). Sweep: [1024, 2048, 4096, 8192, 10000]
-Q = 16                # Number of quantization levels for I and Q channels (4-bit)
-N_GRAM = 3            # N-gram length for temporal encoding (1 = no n-gram)
-WINDOW_SIZE = 128     # Number of I/Q samples per classification window
-                      # RadioML 2016.10a has 128 samples/example
-                      # RadioML 2018.01A has 1024 samples/example (we window it)
-ENCODE_MODE = 'amp_phase'  # 'iq' (raw I/Q) or 'amp_phase' (amplitude + phase-diff)
-                           # amp_phase is strongly recommended for modulation classification
-                           # because real RF signals have random carrier phase/freq offsets
-
-# ============================================================
-# Dataset Configuration
-# ============================================================
-DATASET_VERSION = "2016.10a"   # "2016.10a" or "2018.01A"
-
-# RadioML 2016.10a
-RADIOML_2016_URL = "https://opendata.deepsig.io/datasets/2016.10/RML2016.10a.tar.bz2"
-RADIOML_2016_FILE = os.path.join(DATA_DIR, "RML2016.10a_dict.pkl")
-
-# RadioML 2018.01A
-RADIOML_2018_FILE = os.path.join(DATA_DIR, "GOLD_XYZ_OSC.0001_1024.hdf5")
-
-# Synthetic dataset (for testing without real data)
-USE_SYNTHETIC = False   # Set True to use synthetic data for code testing
-
-# ============================================================
-# RadioML 2016.10a Modulation Classes (11 classes)
-# ============================================================
-MODULATIONS_2016 = [
-    '8PSK', 'AM-DSB', 'AM-SSB', 'BPSK', 'CPFSK',
-    'GFSK', 'PAM4', 'QAM16', 'QAM64', 'QPSK', 'WBFM'
+# ────────────────────────────────────────────────────────────
+# Dataset — MIT-BIH Arrhythmia Database (PhysioNet)
+# ────────────────────────────────────────────────────────────
+# Inter-patient split following AAMI recommendation (DS1 / DS2)
+MITBIH_RECORDS_TRAIN = [
+    101, 106, 108, 109, 112, 114, 115, 116, 118, 119,
+    122, 124, 201, 203, 205, 207, 208, 209, 215, 220,
+    223, 230,
+]
+MITBIH_RECORDS_TEST = [
+    100, 103, 105, 111, 113, 117, 121, 123,
+    200, 202, 210, 212, 213, 214, 219, 221, 222, 228,
+    231, 232, 233, 234,
 ]
 
-# RadioML 2018.01A Modulation Classes (24 classes)
-MODULATIONS_2018 = [
-    'OOK', '4ASK', '8ASK', 'BPSK', 'QPSK', '8PSK',
-    '16PSK', '32PSK', '16APSK', '32APSK', '64APSK', '128APSK',
-    '16QAM', '32QAM', '64QAM', '128QAM', '256QAM',
-    'AM-SSB-WC', 'AM-SSB-SC', 'AM-DSB-WC', 'AM-DSB-SC',
-    'FM', 'GMSK', 'OQPSK'
-]
+# Five AAMI super-classes
+AAMI_CLASSES = ["N", "S", "V", "F", "Q"]
+NUM_CLASSES  = len(AAMI_CLASSES)
 
-# Number of classes based on dataset version
-NUM_CLASSES = len(MODULATIONS_2016) if DATASET_VERSION == "2016.10a" else len(MODULATIONS_2018)
+# Mapping from PhysioNet annotation symbols → AAMI class index
+ANNOT_TO_AAMI = {
+    "N": 0, "L": 0, "R": 0, "e": 0, "j": 0,   # Normal
+    "A": 1, "a": 1, "J": 1, "S": 1,             # Supraventricular
+    "V": 2, "E": 2,                               # Ventricular
+    "F": 3,                                        # Fusion
+    "/": 4, "f": 4, "Q": 4,                       # Unknown / Paced
+}
 
-# ============================================================
-# Training Configuration
-# ============================================================
-TRAIN_SPLIT = 0.7      # Fraction of data for training
-RANDOM_SEED = 42        # For reproducibility
-SNR_FILTER = None       # None = use all SNRs, or list like [0, 2, 4, 6, 8, 10]
-                        # For quick iteration, try SNR_FILTER = [10, 18] (high SNR only)
+# ────────────────────────────────────────────────────────────
+# Preprocessing
+# ────────────────────────────────────────────────────────────
+SAMPLING_RATE = 360           # MIT-BIH sample rate (Hz)
+BEAT_WINDOW   = 187           # Samples per beat (R-peak centred)
+BEAT_BEFORE   = 72            # Samples before R-peak
+BEAT_AFTER    = 114           # Samples after R-peak  (72 + 114 + 1 = 187)
+INPUT_BITS    = 8             # Quantisation bits for FPGA input
 
-# ============================================================
-# FPGA Hardware Parameters (must match Verilog parameters)
-# ============================================================
-FPGA_D = 4096           # Dimension for FPGA (can differ from software sweep)
-FPGA_Q = 16             # Quantization levels for FPGA
-FPGA_N_GRAM = 1         # N-gram for FPGA v1 (start simple, no rotation needed)
-FPGA_NUM_CLASSES = NUM_CLASSES
-FPGA_INPUT_WIDTH = 8    # 8-bit ADC input for I and Q
-FPGA_CHUNK_WIDTH = 64   # Bits processed per clock cycle in Verilog
+# ────────────────────────────────────────────────────────────
+# Haar Wavelet Decomposition
+# ────────────────────────────────────────────────────────────
+WAVELET_LEVELS = 3            # 3-level DWT
+# After 3-level Haar on 187 samples:
+#   Level 1 → cA1 (94), cD1 (94)        ← padding from odd length handled
+#   Level 2 → cA2 (47), cD2 (47)
+#   Level 3 → cA3 (24), cD3 (24)
+# We keep: cA3 (24), cD3 (24), cD2 (47), cD1 (94)  → total 189 features
+SUBBAND_LENGTHS = {
+    "cA3": 24,
+    "cD3": 24,
+    "cD2": 47,
+    "cD1": 94,
+}
 
-# ============================================================
-# FPGA Target Board
-# ============================================================
-FPGA_BOARD = "Nexys A7-100T"
-FPGA_PART = "xc7a100tcsg324-1"
-FPGA_CLK_FREQ = 100_000_000   # 100 MHz system clock
-UART_BAUD_RATE = 115200
+# ────────────────────────────────────────────────────────────
+# BNN Model Architecture (4-branch parallel)
+# ────────────────────────────────────────────────────────────
+# Each branch: one BinaryConv1d → MaxPool(2) → Flatten
+# Branch configs: (input_len, out_channels, kernel_size)
+BRANCH_CONFIGS = {
+    "cA3": {"in_len": 24,  "out_ch": 32, "kernel": 5, "pool": 2},
+    "cD3": {"in_len": 24,  "out_ch": 32, "kernel": 5, "pool": 2},
+    "cD2": {"in_len": 47,  "out_ch": 32, "kernel": 5, "pool": 2},
+    "cD1": {"in_len": 94,  "out_ch": 16, "kernel": 3, "pool": 2},
+}
 
-# ============================================================
-# Evaluation
-# ============================================================
-SNRS_TO_PLOT = list(range(-20, 20, 2))   # SNR values to include in accuracy vs SNR plot
-D_SWEEP = [256, 512, 1024, 2048, 4096, 8192]   # Dimensions for Pareto analysis
-Q_SWEEP = [4, 8, 16, 32]                        # Quantization levels to sweep
-NGRAM_SWEEP = [1, 2, 3, 5]                      # N-gram lengths to sweep
+# After each branch: floor((in_len - kernel + 1) / pool) * out_ch
+#   cA3 branch output: floor((24-5+1)/2) = 10 positions, 32 channels → 320 bits
+#   cD3 branch output: floor((24-5+1)/2) = 10 positions, 32 channels → 320 bits
+#   cD2 branch output: floor((47-5+1)/2) = 21 positions, 32 channels → 672 bits
+#   cD1 branch output: floor((94-3+1)/2) = 46 positions, 16 channels → 736 bits
+# Concatenated: 320 + 320 + 672 + 736 = 2048 bits → power of 2!
+CONCAT_BITS = 2048
+
+# Fully-connected layers
+FC1_OUT = 128         # BinaryLinear(2048 → 128)
+FC2_OUT = NUM_CLASSES  # Linear(128 → 5), full-precision output
+
+# ────────────────────────────────────────────────────────────
+# Training
+# ────────────────────────────────────────────────────────────
+BATCH_SIZE    = 256
+NUM_EPOCHS    = 150
+LEARNING_RATE = 1e-3
+WEIGHT_DECAY  = 1e-4
+RANDOM_SEED   = 42
+USE_CLASS_WEIGHTS = True       # handle N >> V >> S > F > Q imbalance
+
+# ────────────────────────────────────────────────────────────
+# FPGA Hardware
+# ────────────────────────────────────────────────────────────
+FPGA_BOARD      = "PYNQ-Z2"
+FPGA_PART       = "xc7z020clg484-1"
+FPGA_CLK_FREQ   = 100_000_000   # 100 MHz
+UART_BAUD_RATE  = 115_200

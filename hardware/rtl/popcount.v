@@ -1,56 +1,34 @@
-// ============================================================
-// Popcount Module — Counts number of 1-bits in input vector
-// ============================================================
-// Uses a hierarchical adder tree for efficient LUT mapping.
-// This is the fundamental building block for Hamming distance.
+// =============================================================================
+// Parameterized Popcount (Count 1s in an N-bit vector)
+// =============================================================================
+// Uses adder tree — synthesizes efficiently into LUT fabric.
+// Vivado 2024.2 compatible, fully synthesizable.
 //
-// FPGA: Pure combinational logic in LUTs. No DSP, no BRAM.
-// Latency: 0 cycles (combinational) or 1 cycle (registered output)
-//
-// For CHUNK_W=32: popcount of 32 bits → 6-bit result [0..32]
-// LUT usage: ~32 LUTs (Artix-7 uses 6-input LUTs)
-// ============================================================
+// Target: PYNQ-Z2 (xc7z020clg484-1) @ 100 MHz
+// =============================================================================
 
 module popcount #(
-    parameter WIDTH  = 32,                      // Input width
-    parameter OUT_W  = $clog2(WIDTH) + 1        // Output width (enough bits for max count)
+    parameter IN_WIDTH  = 64,
+    parameter OUT_WIDTH = $clog2(IN_WIDTH) + 1   // ceil(log2(N)) + 1
 )(
-    input  wire [WIDTH-1:0]  data_in,
-    output wire [OUT_W-1:0]  count_out
+    input  wire [IN_WIDTH-1:0]  i_data,
+    output wire [OUT_WIDTH-1:0] o_count
 );
 
-    // Hierarchical popcount using generate blocks
-    // Recursively split input in half, count each half, add
+    // ─── Pure Verilog-2001 Combinational Loop ───
+    // Note: Vivado's synthesis engine natively unrolls this into an optimal 
+    // parallel balanced adder tree using LUTs. It does NOT synthesize sequentially
+    // into logic over time, so cycle latency and functionality remain identical.
+    reg [OUT_WIDTH-1:0] count_val;
+    integer i;
 
-    generate
-        if (WIDTH == 1) begin : base_case
-            assign count_out = {{(OUT_W-1){1'b0}}, data_in[0]};
+    always @* begin
+        count_val = 0;
+        for (i = 0; i < IN_WIDTH; i = i + 1) begin
+            count_val = count_val + i_data[i];
         end
-        else if (WIDTH == 2) begin : base_2
-            assign count_out = {{(OUT_W-2){1'b0}}, data_in[0], 1'b0}
-                             + {{(OUT_W-1){1'b0}}, data_in[1]};
-        end
-        else begin : recursive
-            localparam HALF  = WIDTH / 2;
-            localparam REST  = WIDTH - HALF;
-            localparam SUB_W = $clog2(HALF > REST ? HALF : REST) + 1;
+    end
 
-            wire [SUB_W-1:0] count_lo, count_hi;
-
-            popcount #(.WIDTH(HALF))  pc_lo (
-                .data_in  (data_in[HALF-1:0]),
-                .count_out(count_lo)
-            );
-
-            popcount #(.WIDTH(REST))  pc_hi (
-                .data_in  (data_in[WIDTH-1:HALF]),
-                .count_out(count_hi)
-            );
-
-            // Zero-extend and add
-            assign count_out = {{(OUT_W-SUB_W){1'b0}}, count_lo}
-                             + {{(OUT_W-SUB_W){1'b0}}, count_hi};
-        end
-    endgenerate
+    assign o_count = count_val;
 
 endmodule

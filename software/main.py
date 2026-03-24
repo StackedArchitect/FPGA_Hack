@@ -1,235 +1,323 @@
 #!/usr/bin/env python3
 """
-HDC-AMC: Hyperdimensional Computing for Automatic Modulation Classification
-Main training, evaluation, and FPGA export pipeline.
+WaveBNN-ECG: Full Pipeline
+===========================
+Run the complete workflow: Load data → Wavelet DWT → Train BNN → Evaluate → Export for FPGA.
 
 Usage:
-  python main.py                        # Run with synthetic data (for testing)
-  python main.py --dataset 2016.10a     # Run with RadioML 2016.10a
-  python main.py --dataset 2018.01A     # Run with RadioML 2018.01A
-  python main.py --sweep                # Run hyperparameter sweep (D, Q, N-gram)
-  python main.py --export               # Export trained model for FPGA
+    python main.py                          # Full pipeline (train + eval + export)
+    python main.py --epochs 50              # Custom epoch count
+    python main.py --eval-only              # Evaluate saved model (skip training)
+    python main.py --export-only            # Export saved model to .mem files
 """
 
-import sys
-import os
-import time
 import argparse
+import os
+import sys
+import time
 import numpy as np
+import torch
 
-# Add project root to path
+# Ensure src is importable
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.config import *
-from src.hdc_encoder import HDCEncoder
-from src.hdc_classifier import HDCClassifier
-from src.dataset_loader import load_dataset, train_test_split_by_snr
-from src.evaluate import (generate_full_report, compute_accuracy_by_snr,
-                          plot_accuracy_vs_snr, plot_accuracy_vs_dimension,
-                          print_summary)
-from src.export_to_fpga import export_all
+from src.config import (
+    AAMI_CLASSES, NUM_CLASSES, BATCH_SIZE, NUM_EPOCHS, LEARNING_RATE,
+    RANDOM_SEED, MODELS_DIR, RESULTS_DIR, EXPORT_DIR,
+    FPGA_BOARD, FPGA_PART, SUBBAND_LENGTHS, CONCAT_BITS, FC1_OUT,
+    USE_CLASS_WEIGHTS,
+)
+from src.dataset import load_kaggle_mitbih, quantize_for_fpga
+from src.wavelet import haar_dwt_3level_batch, haar_dwt_3level_int, haar_dwt_3level_int_batch
+from src.bnn import WaveBNN
+from src.train import (
+    make_dataloaders, compute_class_weights, train_model,
+    full_evaluation, export_for_fpga,
+)
 
 
-def run_single(D: int, Q: int, n_gram: int, X_train, y_train, snrs_train,
-               X_test, y_test, snrs_test, mod_names, retrain_iters: int = 2,
-               verbose: bool = True):
-    """
-    Run a single HDC experiment with given hyperparameters.
-    
-    Returns:
-        classifier, y_pred, overall_accuracy, snr_accuracies
-    """
-    # Create encoder and classifier
-    encoder = HDCEncoder(D=D, Q=Q, n_gram=n_gram, seed=RANDOM_SEED,
-                         mode=ENCODE_MODE)
-    classifier = HDCClassifier(encoder, num_classes=len(mod_names))
+def print_header():
+    print("=" * 65)
+    print("  WaveBNN-ECG: Wavelet + BNN for ECG Arrhythmia Detection")
+    print("  Target: {} ({})".format(FPGA_BOARD, FPGA_PART))
+    print("=" * 65)
 
-    # Train
+
+def step_load_data():
+    """Step 1: Load and inspect the MIT-BIH dataset."""
+    print("\n" + "─" * 65)
+    print("  STEP 1: Load MIT-BIH Dataset")
+    print("─" * 65)
+
+    X_train, y_train, X_test, y_test = load_kaggle_mitbih()
+
+    print(f"\n  X_train: {X_train.shape}  y_train: {y_train.shape}")
+    print(f"  X_test:  {X_test.shape}   y_test:  {y_test.shape}")
+
+    # Class distribution
+    for name, y in [("Train", y_train), ("Test", y_test)]:
+        counts = np.bincount(y, minlength=NUM_CLASSES)
+        dist = "  ".join(f"{AAMI_CLASSES[i]}={counts[i]:>5d}" for i in range(NUM_CLASSES))
+        print(f"  {name}: {dist}  (total: {len(y):,})")
+
+    return X_train, y_train, X_test, y_test
+
+
+def step_wavelet(X_train, X_test):
+    """Step 2: Quantize + integer Haar wavelet (FPGA bit-exact path)."""
+    print("\n" + "─" * 65)
+    print("  STEP 2: Quantize → Integer Haar Wavelet (3-level, FPGA-exact)")
+    print("─" * 65)
+    print("  Quantize: float → int8 (map ±3σ to ±127)")
+    print("  Haar DWT: add/subtract only (zero multipliers, FPGA bit-exact)")
+
     t0 = time.time()
-    if retrain_iters > 0:
-        classifier.retrain_iterative(X_train, y_train,
-                                      iterations=retrain_iters, verbose=verbose)
-    else:
-        classifier.train(X_train, y_train, verbose=verbose)
-    train_time = time.time() - t0
+    X_train_q = quantize_for_fpga(X_train)
+    X_test_q = quantize_for_fpga(X_test)
 
-    # Predict
-    t0 = time.time()
-    y_pred = classifier.predict(X_test, verbose=verbose)
-    pred_time = time.time() - t0
+    train_sub_int = haar_dwt_3level_int_batch(X_train_q)
+    test_sub_int = haar_dwt_3level_int_batch(X_test_q)
+    elapsed = time.time() - t0
 
-    # Evaluate
-    overall_acc = np.mean(y_pred == y_test)
-    snr_acc = compute_accuracy_by_snr(y_test, y_pred, snrs_test)
+    # Convert int32 → float32 for PyTorch (values remain exact integers)
+    train_sub = {k: v.astype(np.float32) for k, v in train_sub_int.items()}
+    test_sub = {k: v.astype(np.float32) for k, v in test_sub_int.items()}
 
-    if verbose:
-        print(f"\n  D={D}, Q={Q}, N={n_gram}: "
-              f"Accuracy={overall_acc:.4f}, "
-              f"Train={train_time:.1f}s, Pred={pred_time:.1f}s")
+    print(f"\n  Quantize + decompose done in {elapsed:.2f}s")
+    for key in ["cA3", "cD3", "cD2", "cD1"]:
+        v = train_sub_int[key]
+        vmax = max(abs(int(v.min())), abs(int(v.max())))
+        bits = int(np.ceil(np.log2(vmax + 1))) + 1 if vmax > 0 else 2
+        print(f"    {key}: train {v.shape}, range [{v.min():>6d}, {v.max():>6d}] → {bits}-bit signed")
 
-    return classifier, y_pred, overall_acc, snr_acc
+    total_features = sum(v.shape[1] for v in train_sub.values())
+    print(f"\n  Total features per beat: {total_features}")
+    print(f"  Expected concat after BNN branches: {CONCAT_BITS} bits")
+    print(f"  Training on FPGA-exact integer sub-bands (thresholds will match HW)")
 
-
-def run_dimension_sweep(X_train, y_train, snrs_train,
-                        X_test, y_test, snrs_test, mod_names):
-    """
-    Sweep hypervector dimension D and collect accuracy results.
-    This generates the key paper figure: accuracy vs dimension Pareto curve.
-    """
-    print("\n" + "=" * 70)
-    print("  DIMENSION SWEEP (Accuracy vs D)")
-    print("=" * 70)
-
-    dim_acc = {}
-    dim_snr_acc = {}
-
-    for d in D_SWEEP:
-        print(f"\n--- D = {d} ---")
-        _, _, acc, snr_acc = run_single(
-            D=d, Q=Q, n_gram=N_GRAM,
-            X_train=X_train, y_train=y_train, snrs_train=snrs_train,
-            X_test=X_test, y_test=y_test, snrs_test=snrs_test,
-            mod_names=mod_names, retrain_iters=1, verbose=True
-        )
-        dim_acc[d] = acc
-        dim_snr_acc[d] = snr_acc
-
-    # Plot
-    plot_accuracy_vs_dimension(
-        dim_acc,
-        title="HDC-AMC: Accuracy vs Hypervector Dimension",
-        save_path=os.path.join(RESULTS_DIR, "accuracy_vs_D.png")
-    )
-
-    # Plot all SNR curves together
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(1, 1, figsize=(12, 7))
-    colors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#a65628']
-    for i, d in enumerate(sorted(dim_snr_acc.keys())):
-        snrs_sorted = sorted(dim_snr_acc[d].keys())
-        accs = [dim_snr_acc[d][s] for s in snrs_sorted]
-        ax.plot(snrs_sorted, accs, '-o', color=colors[i % len(colors)],
-                linewidth=1.5, markersize=4, label=f'D={d}')
-    ax.set_xlabel('SNR (dB)', fontsize=12)
-    ax.set_ylabel('Accuracy', fontsize=12)
-    ax.set_title('HDC-AMC: Accuracy vs SNR for Different Dimensions', fontsize=14)
-    ax.legend(fontsize=10)
-    ax.grid(True, alpha=0.3)
-    ax.set_ylim([0, 1.05])
-    plt.tight_layout()
-    plt.savefig(os.path.join(RESULTS_DIR, "snr_curves_by_D.png"), dpi=150)
-    plt.close()
-
-    print("\n  Dimension Sweep Results:")
-    for d in sorted(dim_acc.keys()):
-        print(f"    D={d:>5d}: {dim_acc[d]:.4f}")
-
-    return dim_acc
+    return train_sub, test_sub
 
 
+def step_train(model, train_sub, y_train, test_sub, y_test, device, epochs):
+    """Step 3: Train the WaveBNN model."""
+    print("\n" + "─" * 65)
+    print("  STEP 3: Train WaveBNN ({} epochs)".format(epochs))
+    print("─" * 65)
+
+    # Model summary
+    ops = model.count_binary_ops()
+    total_params = sum(p.numel() for p in model.parameters())
+    binary_params = ops["total_binary"]
+    print(f"\n  Parameters: {total_params:,} total")
+    print(f"  Binary ops per inference: {binary_params:,} XNOR+popcount")
+    print(f"  Real MACs (fc2 only): {ops['fc2_real_macs']:,}")
+    print(f"  Concat vector: {CONCAT_BITS} bits → FC1({FC1_OUT}) → FC2({NUM_CLASSES})")
+
+    train_loader, test_loader = make_dataloaders(train_sub, y_train, test_sub, y_test)
+
+    class_weights = None
+    if USE_CLASS_WEIGHTS:
+        class_weights = compute_class_weights(y_train)
+        print(f"\n  Class weights: {[f'{w:.2f}' for w in class_weights.tolist()]}")
+
+    print()
+    history = train_model(model, train_loader, test_loader, device,
+                          num_epochs=epochs, class_weights=class_weights)
+
+    return history, train_loader, test_loader
+
+
+def step_evaluate(model, test_loader, device):
+    """Step 4: Full evaluation with per-class metrics."""
+    print("\n" + "─" * 65)
+    print("  STEP 4: Evaluation")
+    print("─" * 65)
+
+    results = full_evaluation(model, test_loader, device)
+
+    print(f"\n  Overall Accuracy:  {100*results['accuracy']:.2f}%")
+    print(f"  Macro F1:          {results['f1_macro']:.4f}")
+    print(f"  Weighted F1:       {results['f1_weighted']:.4f}")
+
+    print(f"\n  Classification Report:")
+    print(results["report_str"])
+
+    print(f"  Confusion Matrix:")
+    cm = results["confusion_matrix"]
+    print(f"  {'':>8}", end="")
+    for c in AAMI_CLASSES:
+        print(f"  {c:>6}", end="")
+    print()
+    for i in range(NUM_CLASSES):
+        print(f"  {AAMI_CLASSES[i]:>8}", end="")
+        for j in range(NUM_CLASSES):
+            print(f"  {cm[i,j]:>6d}", end="")
+        print()
+
+    # Save results
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    np.savetxt(os.path.join(RESULTS_DIR, "confusion_matrix.csv"),
+               cm, delimiter=",", fmt="%d", header=",".join(AAMI_CLASSES))
+
+    with open(os.path.join(RESULTS_DIR, "metrics.txt"), "w") as f:
+        f.write(f"Accuracy: {results['accuracy']:.4f}\n")
+        f.write(f"F1 Macro: {results['f1_macro']:.4f}\n")
+        f.write(f"F1 Weighted: {results['f1_weighted']:.4f}\n\n")
+        f.write(results["report_str"])
+
+    # Save training history plots if matplotlib available
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+        # Loss
+        if "train_loss" in step_evaluate.history:
+            h = step_evaluate.history
+            axes[0].plot(h["train_loss"], label="Train")
+            axes[0].plot(h["test_loss"], label="Test")
+            axes[0].set_title("Loss")
+            axes[0].legend()
+
+            axes[1].plot(h["train_acc"], label="Train")
+            axes[1].plot(h["test_acc"], label="Test")
+            axes[1].set_title("Accuracy")
+            axes[1].legend()
+
+            axes[2].plot(h["test_f1"], label="F1 (macro)")
+            axes[2].set_title("Test F1")
+            axes[2].legend()
+
+        # Confusion matrix
+        fig2, ax2 = plt.subplots(figsize=(7, 6))
+        cm_norm = cm.astype(float) / (cm.sum(axis=1, keepdims=True) + 1e-8)
+        im = ax2.imshow(cm_norm, cmap="Blues", vmin=0, vmax=1)
+        ax2.set_xticks(range(NUM_CLASSES))
+        ax2.set_yticks(range(NUM_CLASSES))
+        ax2.set_xticklabels(AAMI_CLASSES)
+        ax2.set_yticklabels(AAMI_CLASSES)
+        ax2.set_xlabel("Predicted")
+        ax2.set_ylabel("True")
+        ax2.set_title("Confusion Matrix (Normalised)")
+        for i in range(NUM_CLASSES):
+            for j in range(NUM_CLASSES):
+                color = "white" if cm_norm[i, j] > 0.5 else "black"
+                ax2.text(j, i, f"{cm_norm[i,j]:.2f}\n({cm[i,j]})",
+                         ha="center", va="center", color=color, fontsize=9)
+        fig2.colorbar(im)
+
+        fig.tight_layout()
+        fig.savefig(os.path.join(RESULTS_DIR, "training_curves.png"), dpi=150)
+        fig2.tight_layout()
+        fig2.savefig(os.path.join(RESULTS_DIR, "confusion_matrix.png"), dpi=150)
+        plt.close("all")
+        print(f"\n  Plots saved to {RESULTS_DIR}/")
+    except ImportError:
+        print("  (matplotlib not available — skipping plots)")
+
+    return results
+
+
+def step_export(model):
+    """Step 5: Export weights to .mem files for Verilog."""
+    print("\n" + "─" * 65)
+    print("  STEP 5: Export for FPGA")
+    print("─" * 65)
+
+    files = export_for_fpga(model)
+    print(f"\n  Exported {len(files)} .mem files to {EXPORT_DIR}/:")
+    for f in files:
+        size = os.path.getsize(f)
+        print(f"    {os.path.basename(f):>30s}  {size:>6d} bytes")
+
+    # Also export test vectors for Verilog testbench
+    print(f"\n  Exporting test vectors...")
+    X_train, y_train, X_test, y_test = load_kaggle_mitbih()
+    n_vectors = min(100, len(X_test))
+    X_q = quantize_for_fpga(X_test[:n_vectors])
+
+    os.makedirs(EXPORT_DIR, exist_ok=True)
+    tv_input = os.path.join(EXPORT_DIR, "test_input.mem")
+    tv_label = os.path.join(EXPORT_DIR, "test_labels.mem")
+
+    with open(tv_input, "w") as f:
+        for i in range(n_vectors):
+            hex_vals = " ".join(f"{(v & 0xFF):02X}" for v in X_q[i].astype(np.int16))
+            f.write(hex_vals + "\n")
+
+    with open(tv_label, "w") as f:
+        for i in range(n_vectors):
+            f.write(f"{y_test[i]}\n")
+
+    print(f"    test_input.mem:  {n_vectors} beats × 187 samples (8-bit hex)")
+    print(f"    test_labels.mem: {n_vectors} expected labels")
+    print(f"\n  Done. Use $readmemh / $readmemb in Verilog to load these files.")
+
+
+# ────────────────────────────────────────────────────────────
+# Main
+# ────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(description='HDC-AMC: Hyperdimensional Modulation Classification')
-    parser.add_argument('--dataset', type=str, default=None,
-                        help='Dataset version: "2016.10a", "2018.01A", or "synthetic"')
-    parser.add_argument('--D', type=int, default=None, help='Hypervector dimension')
-    parser.add_argument('--Q', type=int, default=None, help='Quantization levels')
-    parser.add_argument('--ngram', type=int, default=None, help='N-gram length')
-    parser.add_argument('--sweep', action='store_true', help='Run dimension sweep')
-    parser.add_argument('--export', action='store_true', help='Export for FPGA')
-    parser.add_argument('--retrain', type=int, default=2, help='Retrain iterations (0=none)')
-    parser.add_argument('--snr-filter', type=int, nargs='+', default=None,
-                        help='SNR values to include (e.g., 0 2 4 6 8 10)')
+    parser = argparse.ArgumentParser(description="WaveBNN-ECG Pipeline")
+    parser.add_argument("--epochs", type=int, default=NUM_EPOCHS, help="Training epochs")
+    parser.add_argument("--eval-only", action="store_true", help="Only evaluate saved model")
+    parser.add_argument("--export-only", action="store_true", help="Only export saved model")
+    parser.add_argument("--device", type=str, default=None, help="cpu or cuda")
     args = parser.parse_args()
 
-    # Override config with command-line args
-    d = args.D if args.D else D
-    q = args.Q if args.Q else Q
-    n = args.ngram if args.ngram else N_GRAM
+    # Seed
+    torch.manual_seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
 
-    # Determine dataset
-    use_synthetic = False
-    dataset_ver = DATASET_VERSION
-    if args.dataset:
-        if args.dataset.lower() == 'synthetic':
-            use_synthetic = True
-        else:
-            dataset_ver = args.dataset
+    # Device
+    if args.device:
+        device = torch.device(args.device)
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Check if real dataset exists, fall back to synthetic
-    if not use_synthetic:
-        try:
-            X, y, snrs, mod_names = load_dataset(
-                version=dataset_ver,
-                data_dir=DATA_DIR,
-                snr_filter=args.snr_filter,
-                window_size=WINDOW_SIZE,
-                use_synthetic=False
-            )
-        except FileNotFoundError as e:
-            print(f"\n[WARNING] {e}")
-            print("[WARNING] Falling back to synthetic data for pipeline testing.\n")
-            use_synthetic = True
+    print_header()
+    print(f"  Device: {device}")
 
-    if use_synthetic:
-        num_cls = 11 if dataset_ver == "2016.10a" else 24
-        X, y, snrs, mod_names = load_dataset(
-            version=dataset_ver,
-            data_dir=DATA_DIR,
-            snr_filter=args.snr_filter,
-            window_size=WINDOW_SIZE,
-            use_synthetic=True
-        )
+    # ── Load model ──
+    model = WaveBNN().to(device)
 
-    # Split data
-    X_train, y_train, snrs_train, X_test, y_test, snrs_test = \
-        train_test_split_by_snr(X, y, snrs, train_ratio=TRAIN_SPLIT, seed=RANDOM_SEED)
+    if args.eval_only or args.export_only:
+        ckpt = os.path.join(MODELS_DIR, "wavebnn_best.pth")
+        if not os.path.exists(ckpt):
+            print(f"\n  ERROR: No saved model at {ckpt}")
+            print(f"  Run training first: python main.py --epochs {NUM_EPOCHS}")
+            sys.exit(1)
+        model.load_state_dict(torch.load(ckpt, map_location=device, weights_only=True))
+        print(f"  Loaded checkpoint: {ckpt}")
 
-    print(f"\n[Data] Train: {len(y_train)}, Test: {len(y_test)}")
-    print(f"[Data] Classes: {len(mod_names)}, Window: {X.shape[2]} samples")
-
-    # Run dimension sweep if requested
-    if args.sweep:
-        run_dimension_sweep(X_train, y_train, snrs_train,
-                           X_test, y_test, snrs_test, mod_names)
+    if args.eval_only:
+        X_train, y_train, X_test, y_test = step_load_data()
+        train_sub, test_sub = step_wavelet(X_train, X_test)
+        _, test_loader = make_dataloaders(train_sub, y_train, test_sub, y_test)
+        step_evaluate.history = {}
+        step_evaluate(model, test_loader, device)
         return
 
-    # Run single experiment
-    print(f"\n[Config] D={d}, Q={q}, N-gram={n}, Retrain={args.retrain}")
-    classifier, y_pred, overall_acc, snr_acc = run_single(
-        D=d, Q=q, n_gram=n,
-        X_train=X_train, y_train=y_train, snrs_train=snrs_train,
-        X_test=X_test, y_test=y_test, snrs_test=snrs_test,
-        mod_names=mod_names, retrain_iters=args.retrain, verbose=True
+    if args.export_only:
+        step_export(model)
+        return
+
+    # ── Full pipeline ──
+    X_train, y_train, X_test, y_test = step_load_data()
+    train_sub, test_sub = step_wavelet(X_train, X_test)
+    history, train_loader, test_loader = step_train(
+        model, train_sub, y_train, test_sub, y_test, device, args.epochs
     )
+    step_evaluate.history = history
+    step_evaluate(model, test_loader, device)
+    step_export(model)
 
-    # Generate full report
-    generate_full_report(y_test, y_pred, snrs_test, mod_names,
-                         D=d, Q=q, n_gram=n, results_dir=RESULTS_DIR)
-
-    # Save model
-    model_path = os.path.join(RESULTS_DIR, f"hdc_model_D{d}_Q{q}_N{n}.npz")
-    classifier.save_model(model_path)
-
-    # Export for FPGA if requested
-    if args.export:
-        print("\n" + "=" * 70)
-        print("  EXPORTING FOR FPGA")
-        print("=" * 70)
-        export_all(
-            classifier=classifier,
-            X_test=X_test, y_test=y_test, y_pred=y_pred,
-            output_dir=EXPORT_DIR,
-            chunk_width=FPGA_CHUNK_WIDTH,
-            window_size=X_test.shape[2]
-        )
-
-    print(f"\n{'='*70}")
-    print(f"  DONE! Overall accuracy: {overall_acc:.4f} ({overall_acc*100:.2f}%)")
-    print(f"  Results saved to: {RESULTS_DIR}/")
-    if args.export:
-        print(f"  FPGA exports saved to: {EXPORT_DIR}/")
-    print(f"{'='*70}")
+    print("\n" + "=" * 65)
+    print("  PIPELINE COMPLETE")
+    print("=" * 65)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

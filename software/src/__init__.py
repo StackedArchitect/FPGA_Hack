@@ -1,1 +1,1 @@
-# HDC-AMC Software Package
+# WaveBNN-ECG source package

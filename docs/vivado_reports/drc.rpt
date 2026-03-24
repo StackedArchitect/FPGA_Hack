@@ -1,0 +1,194 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+---------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2024.2 (win64) Build 5239630 Fri Nov 08 22:35:27 MST 2024
+| Date         : Tue Mar 24 21:41:04 2026
+| Host         : DESKTOP-EK3KMT5 running 64-bit major release  (build 9200)
+| Command      : report_drc -file C:/Users/ADMIN/Desktop/vivado_reports/drc.rpt
+| Design       : system_top
+| Device       : xc7z020clg484-1
+| Speed File   : -1
+| Design State : Fully Routed
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+Report DRC
+
+Table of Contents
+-----------------
+1. REPORT SUMMARY
+2. REPORT DETAILS
+
+1. REPORT SUMMARY
+-----------------
+            Netlist: netlist
+          Floorplan: impl_1
+      Design limits: <entire design considered>
+           Ruledeck: default
+             Max checks: <unlimited>
+             Checks found: 30
++----------+----------+----------------------------+--------+
+| Rule     | Severity | Description                | Checks |
++----------+----------+----------------------------+--------+
+| PDRC-132 | Warning  | SLICE_PairEqSame_A6A5_WARN | 3      |
+| PDRC-134 | Warning  | SLICE_PairEqSame_B6B5_WARN | 10     |
+| PDRC-136 | Warning  | SLICE_PairEqSame_C6C5_WARN | 4      |
+| PDRC-138 | Warning  | SLICE_PairEqSame_D6D5_WARN | 1      |
+| PDRC-140 | Warning  | SLICE_PairEqSame_A6A5_WARN | 1      |
+| PDRC-142 | Warning  | SLICE_PairEqSame_B6B5_WARN | 6      |
+| PDRC-144 | Warning  | SLICE_PairEqSame_C6C5_WARN | 3      |
+| PDRC-146 | Warning  | SLICE_PairEqSame_D6D5_WARN | 1      |
+| ZPS7-1   | Warning  | PS7 block required         | 1      |
++----------+----------+----------------------------+--------+
+
+2. REPORT DETAILS
+-----------------
+PDRC-132#1 Warning
+SLICE_PairEqSame_A6A5_WARN  
+Luts A6LUT and A5LUT in use in site SLICE_X41Y112 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-132#2 Warning
+SLICE_PairEqSame_A6A5_WARN  
+Luts A6LUT and A5LUT in use in site SLICE_X45Y66 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-132#3 Warning
+SLICE_PairEqSame_A6A5_WARN  
+Luts A6LUT and A5LUT in use in site SLICE_X49Y109 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-134#1 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X37Y66 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-134#2 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X41Y112 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-134#3 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X41Y73 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-134#4 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X44Y62 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-134#5 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X45Y66 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-134#6 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X49Y109 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-134#7 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X61Y109 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-134#8 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X83Y56 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-134#9 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X93Y57 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-134#10 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X97Y63 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-136#1 Warning
+SLICE_PairEqSame_C6C5_WARN  
+Luts C6LUT and C5LUT in use in site SLICE_X43Y65 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-136#2 Warning
+SLICE_PairEqSame_C6C5_WARN  
+Luts C6LUT and C5LUT in use in site SLICE_X45Y66 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-136#3 Warning
+SLICE_PairEqSame_C6C5_WARN  
+Luts C6LUT and C5LUT in use in site SLICE_X83Y56 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-136#4 Warning
+SLICE_PairEqSame_C6C5_WARN  
+Luts C6LUT and C5LUT in use in site SLICE_X97Y63 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-138#1 Warning
+SLICE_PairEqSame_D6D5_WARN  
+Luts D6LUT and D5LUT in use in site SLICE_X45Y66 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-140#1 Warning
+SLICE_PairEqSame_A6A5_WARN  
+Luts A6LUT and A5LUT in use in site SLICE_X96Y62 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-142#1 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X36Y66 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-142#2 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X38Y69 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-142#3 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X82Y59 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-142#4 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X86Y64 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-142#5 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X86Y68 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-142#6 Warning
+SLICE_PairEqSame_B6B5_WARN  
+Luts B6LUT and B5LUT in use in site SLICE_X98Y137 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-144#1 Warning
+SLICE_PairEqSame_C6C5_WARN  
+Luts C6LUT and C5LUT in use in site SLICE_X86Y64 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-144#2 Warning
+SLICE_PairEqSame_C6C5_WARN  
+Luts C6LUT and C5LUT in use in site SLICE_X86Y68 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-144#3 Warning
+SLICE_PairEqSame_C6C5_WARN  
+Luts C6LUT and C5LUT in use in site SLICE_X98Y137 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+PDRC-146#1 Warning
+SLICE_PairEqSame_D6D5_WARN  
+Luts D6LUT and D5LUT in use in site SLICE_X98Y137 with different equations without A6 pin connected to Global Logic High.
+Related violations: <none>
+
+ZPS7-1#1 Warning
+PS7 block required  
+The PS7 cell must be used in this Zynq design in order to enable correct default configuration.
+Related violations: <none>
+
+
