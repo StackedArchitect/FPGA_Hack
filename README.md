@@ -8,43 +8,17 @@ A novel FPGA-accelerated edge AI system that combines **Haar wavelet decompositi
 
 ## Architecture
 
-```
- ECG Beat (187 samples, 8-bit signed, via UART @ 115200 baud)
-   │
-   ▼
-┌──────────────────────────────────────────────────────────────┐
-│  HAAR WAVELET DECOMPOSITION (3-level, add/sub only)          │
-│  187 → cA3(24) + cD3(24) + cD2(47) + cD1(94) = 189 features│
-└───┬──────────┬──────────┬──────────┬─────────────────────────┘
-    │          │          │          │
- cA3(24)    cD3(24)    cD2(47)    cD1(94)
- rhythm     P/T wave   QRS shape  high-freq
-    │          │          │          │
-    ▼          ▼          ▼          ▼
-┌────────┐┌────────┐┌────────┐┌────────┐
-│BNN-cA3 ││BNN-cD3 ││BNN-cD2 ││BNN-cD1 │  4 parallel
-│BinConv ││BinConv ││BinConv ││BinConv │  BNN branches
-│k=5,32ch││k=5,32ch││k=5,32ch││k=3,16ch│  (XNOR+popcount)
-│+BN     ││+BN     ││+BN     ││+BN     │
-│+Pool(2)││+Pool(2)││+Pool(2)││+Pool(2)│
-│→320bit ││→320bit ││→672bit ││→736bit │
-└───┬────┘└───┬────┘└───┬────┘└───┬────┘
-    └────┬────┴────┬────┘         │
-         └────┬────┴──────────────┘
-              ▼
-   ┌─────────────────────────────┐
-   │  Concatenate: 2048 bits     │
-   │  BinFC(2048→128) + BN      │  4-stage pipeline
-   │  FC(128→5, full-precision)  │
-   │  Argmax → Predicted Class   │  2-stage pipelined
-   └─────────────────────────────┘
-              │
-              ▼
-    N | S | V | F | Q  (5-class AAMI)
-              │
-              ▼
-    UART TX → Host PC (1 byte: class in bits[2:0])
-```
+<p align="center">
+  <img src="docs/architecture.png" alt="WaveBNN-ECG Architecture" width="700"/>
+</p>
+
+## Demo: Real-Time Arrhythmia Detection
+
+<p align="center">
+  <img src="software/results/ecg_arrhythmia_animation.mp4" alt="ECG Arrhythmia Animation" width="700"/>
+</p>
+
+> Animated ECG monitor visualization showing real-time beat classification. Normal beats trace in green; ventricular arrhythmia beats glow red with a warning banner. Generated from MIT-BIH Record 208 data.
 
 ## Key Metrics
 
@@ -57,6 +31,7 @@ A novel FPGA-accelerated edge AI system that combines **Haar wavelet decompositi
 | **LUT utilization** | 20,465 / 53,200 (38.5%) |
 | **Register utilization** | 19,317 / 106,400 (18.2%) |
 | **DSP blocks** | **0** (zero hardware multipliers) |
+| **BRAM blocks** | **0** |
 | **Setup WNS** | +0.786 ns (all timing constraints met) |
 | **Target board** | Zynq 7000 ZC702 (xc7z020clg484-1) |
 | **Clock** | 200 MHz LVDS → 100 MHz via MMCM |
@@ -108,6 +83,7 @@ FPGA_Hack/
 ├── software/                          # Python: training + testing
 │   ├── main.py                        # Full pipeline: train → eval → export
 │   ├── uart_test.py                   # PC-side UART communication script
+│   ├── ecg_animation.py               # ECG monitor animation generator
 │   ├── requirements.txt               # Python dependencies
 │   ├── src/
 │   │   ├── config.py                  # All hyperparameters & paths
@@ -117,7 +93,7 @@ FPGA_Hack/
 │   │   └── train.py                   # Training loop + evaluation + export
 │   ├── data/                          # MIT-BIH CSV files (not in repo)
 │   ├── models/                        # Saved PyTorch checkpoints
-│   └── results/                       # metrics.txt, confusion matrix, plots
+│   └── results/                       # Metrics, plots, animation
 ├── hardware/                          # Verilog: FPGA implementation
 │   ├── rtl/
 │   │   ├── system_top.v               # Board wrapper (IBUFDS, MMCM, UART, LEDs)
@@ -132,6 +108,8 @@ FPGA_Hack/
 │   ├── tb/
 │   │   ├── tb_wavebnn_core_sv.sv      # Core-level SystemVerilog testbench
 │   │   ├── tb_system_top_sv.sv        # System-level testbench (with UART)
+│   │   ├── tb_haar_wavelet_3lvl.v     # Wavelet unit testbench
+│   │   ├── mmcm_stub.v                # MMCM simulation stub (for Icarus)
 │   │   ├── run_core_tb.sh             # Icarus Verilog core TB runner
 │   │   ├── run_system_tb.sh           # Icarus Verilog system TB runner
 │   │   └── test_vectors/              # Exported .mem files from Python
@@ -139,7 +117,13 @@ FPGA_Hack/
 │   │   └── zc702.xdc                  # ZC702 pin assignments
 │   └── vivado/
 │       └── create_project.tcl         # Vivado project creation script
-└── docs/                              # Vivado reports & documentation
+├── docs/
+│   ├── architecture.png               # System architecture diagram
+│   └── report/                        # IEEE technical report
+│       ├── main.tex
+│       ├── references.bib
+│       └── images/
+└──
 ```
 
 ## Quick Start
@@ -172,18 +156,10 @@ software/data/mitbih_test.csv
 ### 3. Train Model + Export for FPGA
 
 ```bash
-# Full pipeline: load data → wavelet decomposition → train BNN → evaluate → export .mem files
-python software/main.py --epochs 150
-
-# Or run individual steps:
-python software/main.py --eval-only     # Evaluate saved model
-python software/main.py --export-only   # Export weights to .mem for Verilog
+python software/main.py --epochs 150           # Full pipeline
+python software/main.py --eval-only            # Evaluate saved model
+python software/main.py --export-only          # Export weights to .mem
 ```
-
-This produces:
-- `software/models/wavebnn_best.pth` — trained PyTorch checkpoint
-- `software/results/metrics.txt` — accuracy and per-class metrics
-- `hardware/tb/test_vectors/*.mem` — weight, threshold, and test vector files for Verilog
 
 ### 4. Simulate in Vivado
 
@@ -202,7 +178,7 @@ cd hardware/tb
 bash run_core_tb.sh     # Expected: 10/10 PASSED (653 cycles latency)
 ```
 
-### 5. Synthesize, Implement & Generate Bitstream
+### 5. Synthesize & Generate Bitstream
 
 In Vivado:
 1. **Synthesis** → target: `xc7z020clg484-1`, constraints: `zc702.xdc`
@@ -226,23 +202,8 @@ Connect a USB-UART adapter to **PMOD1 (J62)**:
 | Pin 5 | GND | — | Adapter GND |
 
 ```bash
-# Activate the Python environment
-source .venv/bin/activate
-
-# List available serial ports
-python software/uart_test.py --list-ports
-
-# Run 10 test vectors
 python software/uart_test.py --port /dev/ttyUSB0 --test 10
-
-# Interactive mode (choose individual beats)
 python software/uart_test.py --port /dev/ttyUSB0 --interactive
-
-# Test a specific beat
-python software/uart_test.py --port /dev/ttyUSB0 --csv software/data/mitbih_test.csv --index 42
-
-# On Windows:
-python software/uart_test.py --port COM3 --test 10
 ```
 
 ### LED Indicators
@@ -258,25 +219,11 @@ python software/uart_test.py --port COM3 --test 10
 
 ### Pipeline Architecture
 
-The design uses deep pipelining to meet 100 MHz timing on the Zynq-7020:
-
 | Module | Pipeline Stages | Critical Path |
 |---|---|---|
 | `bnn_branch` | 3 (prefetch → accumulate → threshold) | Window registers break pos→mux→acc chain |
 | `bin_fc1` | 4 (XNOR → popcount → partial sums → threshold) | Partial-sum registers split 16-way addition |
 | `fc_output` | 2 (pairwise compare → final compare) | Argmax comparison tree split across cycles |
-
-### Data Flow
-
-```
-UART RX → system_top (sample counter) → wavebnn_core FSM:
-  1. Collect 187 bytes → input buffer
-  2. Haar 3-level DWT (add/sub) → 4 sub-bands
-  3. 4× bnn_branch (parallel) → 2048-bit concat vector
-  4. bin_fc1: XNOR+popcount 2048→128 bits
-  5. fc_output: FC 128→5 + argmax → class
-  6. UART TX → 1-byte result (bits[2:0] = class)
-```
 
 ### Resource Utilization Breakdown
 
@@ -297,7 +244,7 @@ UART RX → system_top (sample counter) → wavebnn_core FSM:
 
 | Parameter | Value |
 |---|---|
-| Optimizer | Adam (lr=1e-3, weight decay=1e-4) |
+| Optimizer | AdamW (lr=1e-3, weight decay=1e-4) |
 | Epochs | 150 |
 | Batch size | 256 |
 | Binarization | Sign + Straight-Through Estimator (STE) |
@@ -305,19 +252,34 @@ UART RX → system_top (sample counter) → wavebnn_core FSM:
 | Input quantization | float → int8 (±3σ → ±127) |
 | Wavelet | Integer Haar DWT (FPGA bit-exact) |
 
+## ECG Animation
+
+Generate a cinematic ECG monitor animation for presentations:
+
+```bash
+python software/ecg_animation.py                  # 10 beats, MP4
+python software/ecg_animation.py --beats 15        # More beats
+python software/ecg_animation.py --format gif      # GIF for slides
+```
+
 ## Citation
 
-If you use this work, please cite:
-
 ```bibtex
-@misc{wavebnn-ecg,
-  title={WaveBNN-ECG: Wavelet + Binary Neural Network for Real-Time ECG Arrhythmia Detection on FPGA},
-  author={StackedArchitect},
-  year={2026},
-  howpublished={\url{https://github.com/StackedArchitect/FPGA_Hack}}
+@misc{wavebnn-ecg-2026,
+  title   = {WaveBNN-ECG: Multiplier-Free BNN on FPGA for Real-Time ECG
+             Arrhythmia Classification},
+  author  = {K.~V.~Sai Ganesh Arvind and Rajamuri Srivardhan Reddy},
+  year    = {2026},
+  note    = {BITS Pilani -- Hyderabad Campus},
+  howpublished = {\url{https://github.com/StackedArchitect/FPGA_Hack}}
 }
 ```
 
 ## Team
 
-**StackedArchitect** — FPGA Edge AI Hackathon
+| Name | Department | Email |
+|---|---|---|
+| **K. V. Sai Ganesh Arvind** | Electrical and Electronics Engineering | f20220715@hyderabad.bits-pilani.ac.in |
+| **Rajamuri Srivardhan Reddy** | Electronics and Communication Engineering | f20220359@hyderabad.bits-pilani.ac.in |
+
+**BITS Pilani — Hyderabad Campus**
