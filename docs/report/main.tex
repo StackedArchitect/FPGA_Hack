@@ -20,16 +20,22 @@
 \title{WaveBNN-ECG: Multiplier-Free BNN on FPGA for Real-Time ECG Arrhythmia Classification}
 
 \author{
-\IEEEauthorblockN{K.~V.~Sai Ganesh Arvind\IEEEauthorrefmark{1} and
-Rajamuri Srivardhan Reddy\IEEEauthorrefmark{2}}
-\IEEEauthorblockA{Birla Institute of Technology and Science, Pilani -- Hyderabad Campus\\
-\IEEEauthorrefmark{1}f20220715@hyderabad.bits-pilani.ac.in,
-\IEEEauthorrefmark{2}f20220359@hyderabad.bits-pilani.ac.in\\[4pt]
-Department of Electrical Engineering / Department of Electronics and Communication Engineering}
-\thanks{Source code available at: \url{https://github.com/StackedArchitect/FPGA_Hack}}
+\IEEEauthorblockN{K.~V.~Sai Ganesh Arvind}
+\IEEEauthorblockA{Department of Electrical and Electronics Engineering\\
+BITS, Pilani -- Hyderabad Campus\\
+\texttt{f20220715@hyderabad.bits-pilani.ac.in}}
+\and
+\IEEEauthorblockN{Rajamuri Srivardhan Reddy}
+\IEEEauthorblockA{Department of Electronics and Communication Engineering\\
+BITS, Pilani -- Hyderabad Campus\\
+\texttt{f20220359@hyderabad.bits-pilani.ac.in}}
 }
 
 \maketitle
+
+\begin{center}
+\footnotesize\textit{Source code repository:} \url{https://github.com/StackedArchitect/FPGA_Hack}
+\end{center}
 
 \begin{abstract}
 This paper presents WaveBNN-ECG, an FPGA-accelerated edge AI system that combines three-level Haar wavelet decomposition with a parallel multi-branch Binary Neural Network (BNN) for real-time electrocardiogram (ECG) arrhythmia classification. The design classifies heartbeats into five AAMI categories using zero hardware multipliers, achieving 97.4\% accuracy with a macro F1-score of 0.878 on the MIT-BIH Arrhythmia Database~\cite{moody2001mitbih}. The complete inference pipeline is implemented entirely using XNOR gates, popcount trees, and adders on a Xilinx Zynq-7020 FPGA (ZC702 evaluation board). Through iterative RTL pipelining and fanout optimization, the design meets timing closure at 100~MHz with a worst negative slack (WNS) of~+0.786~ns, consuming only 0.42~W total on-chip power. The inference latency is 653 clock cycles (6.53~$\mu$s), utilizing 38.5\% of available LUTs, zero BRAM blocks, and zero DSP48 slices. To the authors' knowledge, this is the first FPGA implementation combining wavelet feature extraction with binary neural networks for ECG classification.
@@ -453,29 +459,7 @@ Table~\ref{tab:classification} presents the per-class classification results. Th
 
 \subsection{FPGA Resource Utilization}
 
-The design was synthesized and implemented using Vivado 2024.2 targeting the xc7z020clg484-1 device. Table~\ref{tab:utilization} presents the resource utilization.
-
-\begin{table}[htbp]
-    \centering
-    \caption{FPGA Resource Utilization (Post-Implementation)}
-    \label{tab:utilization}
-    \begin{tabular}{lccc}
-        \toprule
-        \textbf{Resource} & \textbf{Used} & \textbf{Available} & \textbf{Util.\%} \\
-        \midrule
-        Slice LUTs       & 20,465  & 53,200  & 38.47 \\
-        Slice Registers  & 19,317  & 106,400 & 18.16 \\
-        F7 Muxes         & 905     & 26,600  & 3.40 \\
-        Slices           & 7,507   & 13,300  & 56.44 \\
-        Block RAM        & 0       & 140     & 0.00 \\
-        DSP48            & 0       & 220     & 0.00 \\
-        MMCM             & 1       & 4       & 25.00 \\
-        Bonded IOB       & 9       & 200     & 4.50 \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
-Notably, the design uses \textbf{zero BRAM} and \textbf{zero DSP blocks}. All storage is in distributed flip-flops and all computation uses LUT-based logic. Fig.~\ref{fig:utilization} shows the hierarchical utilization from Vivado.
+The design was synthesized and implemented using Vivado 2024.2 targeting the xc7z020clg484-1 device. Notably, the design uses \textbf{zero BRAM} and \textbf{zero DSP blocks}. All storage is in distributed flip-flops and all computation uses LUT-based logic. Fig.~\ref{fig:utilization} shows the hierarchical utilization from Vivado.
 
 \begin{figure}[htbp]
     \centering

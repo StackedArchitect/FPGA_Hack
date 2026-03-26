@@ -15,10 +15,10 @@ A novel FPGA-accelerated edge AI system that combines **Haar wavelet decompositi
 ## Demo: Real-Time Arrhythmia Detection
 
 <p align="center">
-  <img src="software/results/ecg_arrhythmia_animation.mp4" alt="ECG Arrhythmia Animation" width="700"/>
+  <img src="software/results/ecg_arrhythmia_demo.gif" alt="ECG Arrhythmia Animation" width="700"/>
 </p>
 
-> Animated ECG monitor visualization showing real-time beat classification. Normal beats trace in green; ventricular arrhythmia beats glow red with a warning banner. Generated from MIT-BIH Record 208 data.
+> Real-time ECG classification demo: normal beats (green) and ventricular arrhythmia (red) from MIT-BIH Record 208.
 
 ## Key Metrics
 
