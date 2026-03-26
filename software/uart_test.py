@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
-"""
-WaveBNN-ECG: UART Test Script
-================================
-Send ECG heartbeat samples to the FPGA over UART and receive classification results.
-
-Usage:
-    python uart_test.py                          # Interactive menu
-    python uart_test.py --port /dev/ttyUSB0      # Specify serial port
-    python uart_test.py --test 10                # Run first 10 test vectors
-    python uart_test.py --csv data/mitbih_test.csv --index 42   # Classify beat #42
-
-Protocol:
-    TX → FPGA: 187 bytes (int8 ECG samples, sent unsigned: value & 0xFF)
-    RX ← FPGA: 1 byte (bits [2:0] = predicted AAMI class 0-4)
-    Baud: 115200, 8N1
-"""
+"""UART test: send ECG beats to FPGA, receive classification results."""
 
 import argparse
 import os

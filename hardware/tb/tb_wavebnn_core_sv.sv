@@ -1,26 +1,4 @@
-// =============================================================================
-// Testbench: WaveBNN Core — SystemVerilog (No UART)
-// =============================================================================
-//
-// Comprehensive testbench for wavebnn_core:
-//   - Loads test vectors from .mem files
-//   - Feeds 187-sample ECG beats directly to the core
-//   - Monitors all pipeline stages with timestamps
-//   - Tracks per-test latency and pass/fail status
-//   - Provides detailed debug output on failure
-//
-// Simulation time: ~100µs for 10 vectors @ 100 MHz
-// Vivado: run 100 ms  |  Icarus: self-terminating
-//
-// Usage (Icarus):
-//   cd hardware/tb/test_vectors
-//   iverilog -g2012 -o tb_core_sv \
-//       ../tb_wavebnn_core_sv.sv \
-//       ../../rtl/wavebnn_core.v ../../rtl/haar_wavelet_3lvl.v \
-//       ../../rtl/bnn_branch.v ../../rtl/popcount.v \
-//       ../../rtl/bin_fc1.v ../../rtl/fc_output.v
-//   vvp tb_core_sv
-// =============================================================================
+// Testbench: WaveBNN Core (SystemVerilog, no UART)
 
 `timescale 1ns / 1ps
 

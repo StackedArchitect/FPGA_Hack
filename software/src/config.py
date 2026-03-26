@@ -1,15 +1,8 @@
-"""
-WaveBNN-ECG Configuration
-=========================
-All hyperparameters and paths for Wavelet + BNN ECG Arrhythmia Detection.
-Target Board: PYNQ-Z2 (Zynq-7020, xc7z020clg484-1)
-"""
+"""WaveBNN-ECG configuration: hyperparameters and paths."""
 
 import os
 
-# ────────────────────────────────────────────────────────────
 # Paths
-# ────────────────────────────────────────────────────────────
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR     = os.path.join(PROJECT_ROOT, "data")
 RESULTS_DIR  = os.path.join(PROJECT_ROOT, "results")
@@ -20,9 +13,7 @@ EXPORT_DIR   = os.path.join(HARDWARE_DIR, "tb", "test_vectors")
 for _d in [DATA_DIR, RESULTS_DIR, MODELS_DIR]:
     os.makedirs(_d, exist_ok=True)
 
-# ────────────────────────────────────────────────────────────
 # Dataset — MIT-BIH Arrhythmia Database (PhysioNet)
-# ────────────────────────────────────────────────────────────
 # Inter-patient split following AAMI recommendation (DS1 / DS2)
 MITBIH_RECORDS_TRAIN = [
     101, 106, 108, 109, 112, 114, 115, 116, 118, 119,
@@ -48,18 +39,14 @@ ANNOT_TO_AAMI = {
     "/": 4, "f": 4, "Q": 4,                       # Unknown / Paced
 }
 
-# ────────────────────────────────────────────────────────────
 # Preprocessing
-# ────────────────────────────────────────────────────────────
 SAMPLING_RATE = 360           # MIT-BIH sample rate (Hz)
 BEAT_WINDOW   = 187           # Samples per beat (R-peak centred)
 BEAT_BEFORE   = 72            # Samples before R-peak
 BEAT_AFTER    = 114           # Samples after R-peak  (72 + 114 + 1 = 187)
 INPUT_BITS    = 8             # Quantisation bits for FPGA input
 
-# ────────────────────────────────────────────────────────────
 # Haar Wavelet Decomposition
-# ────────────────────────────────────────────────────────────
 WAVELET_LEVELS = 3            # 3-level DWT
 # After 3-level Haar on 187 samples:
 #   Level 1 → cA1 (94), cD1 (94)        ← padding from odd length handled
@@ -73,9 +60,7 @@ SUBBAND_LENGTHS = {
     "cD1": 94,
 }
 
-# ────────────────────────────────────────────────────────────
 # BNN Model Architecture (4-branch parallel)
-# ────────────────────────────────────────────────────────────
 # Each branch: one BinaryConv1d → MaxPool(2) → Flatten
 # Branch configs: (input_len, out_channels, kernel_size)
 BRANCH_CONFIGS = {
@@ -97,9 +82,7 @@ CONCAT_BITS = 2048
 FC1_OUT = 128         # BinaryLinear(2048 → 128)
 FC2_OUT = NUM_CLASSES  # Linear(128 → 5), full-precision output
 
-# ────────────────────────────────────────────────────────────
 # Training
-# ────────────────────────────────────────────────────────────
 BATCH_SIZE    = 256
 NUM_EPOCHS    = 150
 LEARNING_RATE = 1e-3
@@ -107,9 +90,7 @@ WEIGHT_DECAY  = 1e-4
 RANDOM_SEED   = 42
 USE_CLASS_WEIGHTS = True       # handle N >> V >> S > F > Q imbalance
 
-# ────────────────────────────────────────────────────────────
 # FPGA Hardware
-# ────────────────────────────────────────────────────────────
 FPGA_BOARD      = "PYNQ-Z2"
 FPGA_PART       = "xc7z020clg484-1"
 FPGA_CLK_FREQ   = 100_000_000   # 100 MHz

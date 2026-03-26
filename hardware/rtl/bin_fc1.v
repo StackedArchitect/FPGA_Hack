@@ -1,17 +1,5 @@
-// =============================================================================
-// WaveBNN-ECG: Binary Fully-Connected Layer (FC1: 2048 → 128)
-// =============================================================================
-//
-// Binary FC: XNOR + popcount between 2048-bit input and binary weight rows.
-//
-// PIPELINED: 4 stages per neuron to meet 100 MHz timing.
-//   Stage 1 (S_XNOR):   XNOR weight row with input, register result
-//   Stage 2 (S_POP):     Popcount 16 chunks of 128 bits, register counts
-//   Stage 3 (S_SUM):     Sum 2 groups of 8 chunk counts, register partial sums
-//   Stage 4 (S_THRESH):  Final sum + threshold compare, store output bit
-//
-// All 4 stages run concurrently in steady state (1 neuron/cycle throughput).
-// =============================================================================
+// WaveBNN-ECG: Binary FC (2048 -> 128), 4-stage pipeline
+// XNOR -> popcount -> partial sums -> threshold
 
 module bin_fc1 #(
     parameter IN_BITS   = 2048,

@@ -1,18 +1,5 @@
-// =============================================================================
-// WaveBNN-ECG: BNN Branch (Parameterized)
-// =============================================================================
-//
-// Implements one sub-band processing branch:
-//   Input buffer → BinaryConv1d → BN threshold → MaxPool(2) → flat bits
-//
-// Pipeline: 3 stages with window pre-fetch to reduce pos fanout:
-//   Stage 0 (PREFETCH): Read input_buf[pos+0..4] into window registers
-//   Stage 1 (COMPUTE):  Accumulate from window registers, register result
-//   Stage 2 (implicit):  Threshold compare from registered accumulators
-//   Stages run overlapped in steady state (1 position per cycle throughput)
-//
-// Target: ZC702 (xc7z020clg484-1) @ 100 MHz
-// =============================================================================
+// WaveBNN-ECG: BNN Branch — BinConv1d + BN threshold + MaxPool(2)
+// 3-stage pipeline: PREFETCH -> COMPUTE -> THRESHOLD
 
 module bnn_branch #(
     parameter IN_LEN    = 24,

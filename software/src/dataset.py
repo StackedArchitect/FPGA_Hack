@@ -1,14 +1,4 @@
-"""
-MIT-BIH Arrhythmia Database Loader
-===================================
-Supports two data sources:
-  1. wfdb (downloads from PhysioNet) — full pipeline with R-peak segmentation
-  2. Kaggle pre-processed CSV — already segmented, ready to use
-
-Both produce the same output format:
-  X: np.ndarray (N, 187) float32 — normalised beat waveforms
-  y: np.ndarray (N,)     int64   — AAMI class labels 0–4
-"""
+"""MIT-BIH dataset loader (WFDB + Kaggle CSV)."""
 
 import os
 import numpy as np
@@ -20,9 +10,7 @@ from .config import (
 )
 
 
-# ────────────────────────────────────────────────────────────
 # PhysioNet / wfdb Loader
-# ────────────────────────────────────────────────────────────
 
 def download_mitbih(data_dir: str = DATA_DIR) -> None:
     """Download MIT-BIH Arrhythmia Database from PhysioNet using wfdb."""
@@ -120,9 +108,7 @@ def load_mitbih(data_dir: str = DATA_DIR) -> tuple:
     return X_train, y_train, X_test, y_test
 
 
-# ────────────────────────────────────────────────────────────
 # Kaggle Pre-processed CSV Loader (simpler, faster)
-# ────────────────────────────────────────────────────────────
 
 def load_kaggle_mitbih(data_dir: str = DATA_DIR) -> tuple:
     """
@@ -161,9 +147,7 @@ def load_kaggle_mitbih(data_dir: str = DATA_DIR) -> tuple:
     return X_train, y_train, X_test, y_test
 
 
-# ────────────────────────────────────────────────────────────
 # Quantisation for FPGA
-# ────────────────────────────────────────────────────────────
 
 def quantize_for_fpga(X: np.ndarray, bits: int = INPUT_BITS) -> np.ndarray:
     """

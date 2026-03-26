@@ -1,11 +1,4 @@
-// =============================================================================
-// Parameterized Popcount (Count 1s in an N-bit vector)
-// =============================================================================
-// Uses adder tree — synthesizes efficiently into LUT fabric.
-// Vivado 2024.2 compatible, fully synthesizable.
-//
-// Target: PYNQ-Z2 (xc7z020clg484-1) @ 100 MHz
-// =============================================================================
+// Parameterized popcount (adder tree)
 
 module popcount #(
     parameter IN_WIDTH  = 64,
@@ -15,10 +8,6 @@ module popcount #(
     output wire [OUT_WIDTH-1:0] o_count
 );
 
-    // ─── Pure Verilog-2001 Combinational Loop ───
-    // Note: Vivado's synthesis engine natively unrolls this into an optimal 
-    // parallel balanced adder tree using LUTs. It does NOT synthesize sequentially
-    // into logic over time, so cycle latency and functionality remain identical.
     reg [OUT_WIDTH-1:0] count_val;
     integer i;
 

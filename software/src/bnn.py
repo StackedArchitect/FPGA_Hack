@@ -1,17 +1,4 @@
-"""
-WaveBNN-ECG: Binary Neural Network Model
-=========================================
-4-branch parallel BNN with binary convolutions and binary fully-connected layers.
-Uses Straight-Through Estimator (STE) for gradient propagation through sign().
-
-Architecture:
-    cA3 → BinConv1d(1,32,k5) → BN → Sign → MaxPool(2) → 320 bits ─┐
-    cD3 → BinConv1d(1,32,k5) → BN → Sign → MaxPool(2) → 320 bits ─┤
-    cD2 → BinConv1d(1,32,k5) → BN → Sign → MaxPool(2) → 672 bits ─┤ → 2048
-    cD1 → BinConv1d(1,16,k3) → BN → Sign → MaxPool(2) → 736 bits ─┘
-                    ↓
-    BinLinear(2048,128) → BN → Sign → Linear(128,5)
-"""
+"""WaveBNN-ECG: 4-branch parallel BNN with STE binarization."""
 
 import torch
 import torch.nn as nn
@@ -21,9 +8,7 @@ import math
 from .config import (BRANCH_CONFIGS, CONCAT_BITS, FC1_OUT, FC2_OUT, NUM_CLASSES)
 
 
-# ────────────────────────────────────────────────────────────
 # Binary primitives
-# ────────────────────────────────────────────────────────────
 class SignSTE(torch.autograd.Function):
     """Sign binarisation with Straight-Through Estimator."""
     @staticmethod
@@ -70,9 +55,7 @@ class BinaryLinear(nn.Module):
         return F.linear(x, w_bin, self.linear.bias)
 
 
-# ────────────────────────────────────────────────────────────
 # Branch module (one per sub-band)
-# ────────────────────────────────────────────────────────────
 class BNNBranch(nn.Module):
     """Single sub-band branch: BinConv1d → BN → Sign → MaxPool → Flatten."""
     def __init__(self, in_len, out_channels, kernel_size, pool_size):
@@ -96,9 +79,7 @@ class BNNBranch(nn.Module):
         return x.view(x.size(0), -1)   # (B, flat_size)
 
 
-# ────────────────────────────────────────────────────────────
 # Full WaveBNN model
-# ────────────────────────────────────────────────────────────
 class WaveBNN(nn.Module):
     """
     4-branch parallel Binary Neural Network for ECG arrhythmia classification.

@@ -1,17 +1,4 @@
-// =============================================================================
-// WaveBNN-ECG: Fixed-Point FC Output Layer (FC2: 128 → 5) + Argmax
-// =============================================================================
-//
-// Full-precision FC with binary inputs and 16-bit fixed-point weights.
-//   acc[o] = bias[o] + Σ (x_bit[i] ? +weight[o][i] : -weight[o][i])
-//
-// Processing: 5 neurons in parallel, iterate 128 input bits (128 cycles).
-// After accumulation, argmax is done in 2 registered stages:
-//   Stage 1: Register accumulators, compare pairs (acc[0]vs[1], [2]vs[3])
-//   Stage 2: Final comparison of 3 candidates → output class
-//
-// This breaks the argmax comparison chain to meet 100 MHz timing.
-// =============================================================================
+// WaveBNN-ECG: FC Output (128 -> 5) + 2-stage pipelined argmax
 
 module fc_output #(
     parameter IN_BITS     = 128,

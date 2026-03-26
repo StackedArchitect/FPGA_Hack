@@ -1,29 +1,4 @@
-// =============================================================================
-// Testbench: System Top (Full Architecture with UART)
-// =============================================================================
-//
-// End-to-end test of the complete system_top module:
-//   PC(TB) --UART TX--> system_top --inference--> system_top --UART RX--> PC(TB)
-//
-// Clock Strategy:
-//   - Vivado: TB drives 200 MHz differential clock on sys_clk_p/sys_clk_n.
-//             The DUT's IBUFDS + MMCM produces 100 MHz internally.
-//   - Icarus: Uses -DSIMULATION flag to bypass IBUFDS/MMCM.
-//             TB drives 100 MHz directly on sys_clk_p.
-//
-// Simulation time: ~16.3 ms per test vector (UART limited)
-// Vivado: run 50 ms (1 vector) or run 100 ms (2 vectors)
-//
-// Usage (Icarus):
-//   cd hardware/tb/test_vectors
-//   iverilog -g2012 -DSIMULATION -o tb_sys_sv \
-//       ../tb_system_top_sv.sv \
-//       ../../rtl/system_top.v ../../rtl/wavebnn_core.v \
-//       ../../rtl/haar_wavelet_3lvl.v ../../rtl/bnn_branch.v \
-//       ../../rtl/popcount.v ../../rtl/bin_fc1.v ../../rtl/fc_output.v \
-//       ../../rtl/uart_rx.v ../../rtl/uart_tx.v
-//   vvp tb_sys_sv
-// =============================================================================
+// Testbench: System Top (full architecture with UART)
 
 `timescale 1ns / 1ps
 

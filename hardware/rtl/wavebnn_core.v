@@ -1,20 +1,5 @@
-// =============================================================================
-// WaveBNN-ECG: Inference Core (Pipeline Controller)
-// =============================================================================
-//
-// Connects all processing stages:
-//   1. Haar Wavelet (3-level DWT)
-//   2. Four BNN branches (parallel): cA3, cD3, cD2, cD1
-//   3. Binary FC1 (2048 → 128)
-//   4. Fixed-point FC2 (128 → 5) + argmax
-//
-// Data flow (all controlled by FSM):
-//   i_start → ingest 187 samples → wavelet → feed branches → FC1 → FC2 → done
-//
-// Latency: ~190 + ~187 + ~130 + ~131 = ~638 cycles = 6.38 μs @ 100 MHz
-//
-// Target: PYNQ-Z2 (xc7z020clg484-1) @ 100 MHz, Vivado 2024.2
-// =============================================================================
+// WaveBNN-ECG: Inference Core
+// Wavelet -> 4x BNN branches -> FC1 -> FC2 -> argmax
 
 module wavebnn_core (
     input  wire        clk,
@@ -31,9 +16,7 @@ module wavebnn_core (
     output reg  [2:0]  o_class           // predicted AAMI class (0-4)
 );
 
-    // ─────────────────────────────────────────────
     // Sub-band parameters
-    // ─────────────────────────────────────────────
     localparam LEN_CA3 = 24;
     localparam LEN_CD3 = 24;
     localparam LEN_CD2 = 47;
@@ -47,9 +30,7 @@ module wavebnn_core (
     localparam FLAT_CD1 = 736;   // 46 * 16
     localparam CONCAT   = 2048;  // total
 
-    // ─────────────────────────────────────────────
     // FSM states
-    // ─────────────────────────────────────────────
     localparam S_IDLE      = 3'd0;
     localparam S_WAVELET   = 3'd1;
     localparam S_FEED      = 3'd2;
@@ -63,9 +44,7 @@ module wavebnn_core (
 
     assign o_busy = (state != S_IDLE);
 
-    // ─────────────────────────────────────────────
     // Haar Wavelet Module
-    // ─────────────────────────────────────────────
     // wav_start is combinational so wavelet sees i_start on the same cycle
     wire        wav_start = (state == S_IDLE) && i_start;
     wire        wav_busy, wav_done;
@@ -90,9 +69,7 @@ module wavebnn_core (
         .o_cA3          (wav_cA3)
     );
 
-    // ─────────────────────────────────────────────
     // Branch start / valid signals
-    // ─────────────────────────────────────────────
     // wav_rd_addr is registered (1-cycle lag behind feed_addr).
     // Pipeline-delay the valid signals to match, so data and valid arrive together.
     reg br_start;
@@ -114,9 +91,7 @@ module wavebnn_core (
     wire br_cD2_valid = feed_active && (feed_addr_d < LEN_CD2);
     wire br_cD1_valid = feed_active && (feed_addr_d < LEN_CD1);
 
-    // ─────────────────────────────────────────────
     // BNN Branch: cA3 (24 × 12-bit → 320 flat bits)
-    // ─────────────────────────────────────────────
     wire        br_cA3_done;
     wire [FLAT_CA3-1:0] br_cA3_feat;
 
@@ -138,9 +113,7 @@ module wavebnn_core (
         .o_features (br_cA3_feat)
     );
 
-    // ─────────────────────────────────────────────
     // BNN Branch: cD3 (24 × 12-bit → 320 flat bits)
-    // ─────────────────────────────────────────────
     wire        br_cD3_done;
     wire [FLAT_CD3-1:0] br_cD3_feat;
 
@@ -162,9 +135,7 @@ module wavebnn_core (
         .o_features (br_cD3_feat)
     );
 
-    // ─────────────────────────────────────────────
     // BNN Branch: cD2 (47 × 11-bit → 672 flat bits)
-    // ─────────────────────────────────────────────
     wire        br_cD2_done;
     wire [FLAT_CD2-1:0] br_cD2_feat;
 
@@ -186,9 +157,7 @@ module wavebnn_core (
         .o_features (br_cD2_feat)
     );
 
-    // ─────────────────────────────────────────────
     // BNN Branch: cD1 (94 × 10-bit → 736 flat bits)
-    // ─────────────────────────────────────────────
     wire        br_cD1_done;
     wire [FLAT_CD1-1:0] br_cD1_feat;
 
@@ -223,9 +192,7 @@ module wavebnn_core (
     // ─── Concatenate branch outputs (cA3 at LSB, matching PyTorch cat order) ───
     wire [CONCAT-1:0] concat_features = {br_cD1_feat, br_cD2_feat, br_cD3_feat, br_cA3_feat};
 
-    // ─────────────────────────────────────────────
     // Binary FC1 (2048 → 128)
-    // ─────────────────────────────────────────────
     reg         fc1_start;
     wire        fc1_done;
     wire [127:0] fc1_out;
@@ -244,9 +211,7 @@ module wavebnn_core (
         .o_data (fc1_out)
     );
 
-    // ─────────────────────────────────────────────
     // FC2 Output (128 → 5) + Argmax
-    // ─────────────────────────────────────────────
     reg         fc2_start;
     wire        fc2_done;
     wire [2:0]  fc2_class;
@@ -266,9 +231,7 @@ module wavebnn_core (
         .o_score ()            // unused debug port
     );
 
-    // ─────────────────────────────────────────────
     // Main FSM
-    // ─────────────────────────────────────────────
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state     <= S_IDLE;

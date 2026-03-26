@@ -1,23 +1,5 @@
-// =============================================================================
-// WaveBNN-ECG: 3-Level Haar Wavelet Decomposition
-// =============================================================================
-//
-// Computes integer-exact 3-level Haar DWT on a 187-sample ECG beat.
-//
-//   Level 1: 187 → pad(188) → cA1[94], cD1[94]   (10-bit signed)
-//   Level 2: 94  →             cA2[47], cD2[47]   (11-bit signed)
-//   Level 3: 47  → pad(48)  → cA3[24], cD3[24]   (12-bit signed)
-//
-// Operation: ONLY additions and subtractions (zero multipliers / DSP slices).
-//
-// Interface:
-//   - Samples are written one at a time via (i_sample, i_sample_valid)
-//   - After 187 samples, the module processes all 3 levels combinationally
-//     from the input buffer and asserts o_done for one cycle
-//   - Sub-band outputs are read via address (o_cA3, o_cD3, o_cD2, o_cD1)
-//
-// Target: PYNQ-Z2 (xc7z020clg484-1) @ 100 MHz
-// =============================================================================
+// WaveBNN-ECG: 3-Level Haar Wavelet (add/sub only, zero multipliers)
+// 187 samples -> cA3(24), cD3(24), cD2(47), cD1(94)
 
 module haar_wavelet_3lvl (
     input  wire        clk,
@@ -40,9 +22,7 @@ module haar_wavelet_3lvl (
     output wire signed [11:0] o_cA3      // 12-bit approx level 3
 );
 
-    // ─────────────────────────────────────────────
     // Parameters
-    // ─────────────────────────────────────────────
     localparam N_SAMPLES = 187;
     localparam N_PAD1    = 188;  // padded for level 1
     localparam N_CA1     = 94;   // cA1 / cD1 length
@@ -50,42 +30,30 @@ module haar_wavelet_3lvl (
     localparam N_PAD3    = 48;   // padded for level 3
     localparam N_CA3     = 24;   // cA3 / cD3 length
 
-    // ─────────────────────────────────────────────
     // Input sample buffer (188 entries: 187 + 1 pad)
-    // ─────────────────────────────────────────────
     reg signed [7:0] sample_buf [0:N_PAD1-1];
     reg [7:0] sample_cnt;
 
-    // ─────────────────────────────────────────────
     // Level 1 output: cA1[94], cD1[94] — 10-bit signed
-    // ─────────────────────────────────────────────
     reg signed [9:0] cA1 [0:N_CA1-1];
     reg signed [9:0] cD1 [0:N_CA1-1];
 
-    // ─────────────────────────────────────────────
     // Level 2 output: cA2[48], cD2[47] — 11-bit signed
     // (cA2 has 48 entries: 47 + 1 pad for level 3)
-    // ─────────────────────────────────────────────
     reg signed [10:0] cA2 [0:N_PAD3-1];
     reg signed [10:0] cD2 [0:N_CA2-1];
 
-    // ─────────────────────────────────────────────
     // Level 3 output: cA3[24], cD3[24] — 12-bit signed
-    // ─────────────────────────────────────────────
     reg signed [11:0] cA3_buf [0:N_CA3-1];
     reg signed [11:0] cD3_buf [0:N_CA3-1];
 
-    // ─────────────────────────────────────────────
     // Read port (directly from sub-band memories)
-    // ─────────────────────────────────────────────
     assign o_cD1 = cD1[i_rd_addr];
     assign o_cD2 = cD2[i_rd_addr];
     assign o_cD3 = cD3_buf[i_rd_addr];
     assign o_cA3 = cA3_buf[i_rd_addr];
 
-    // ─────────────────────────────────────────────
     // FSM
-    // ─────────────────────────────────────────────
     localparam S_IDLE    = 2'd0;
     localparam S_INGEST  = 2'd1;
     localparam S_COMPUTE = 2'd2;

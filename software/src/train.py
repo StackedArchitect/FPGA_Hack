@@ -1,8 +1,4 @@
-"""
-WaveBNN-ECG: Training & Evaluation Utilities
-=============================================
-Dataset wrapper, training loop, evaluation metrics, and FPGA export.
-"""
+"""Training, evaluation, and FPGA export utilities."""
 
 import math
 import os
@@ -22,9 +18,7 @@ from .config import (
 )
 
 
-# ────────────────────────────────────────────────────────────
 # Focal Loss
-# ────────────────────────────────────────────────────────────
 class FocalLoss(nn.Module):
     """Focal Loss — handles class imbalance better than weighted CE."""
     def __init__(self, alpha=None, gamma=2.0):
@@ -38,9 +32,7 @@ class FocalLoss(nn.Module):
         return (((1 - pt) ** self.gamma) * ce).mean()
 
 
-# ────────────────────────────────────────────────────────────
 # Dataset
-# ────────────────────────────────────────────────────────────
 class ECGSubbandDataset(Dataset):
     """Wraps wavelet sub-band arrays + labels for PyTorch DataLoader."""
     def __init__(self, subbands_dict, labels, augment=False):
@@ -88,9 +80,7 @@ def make_dataloaders(train_subbands, y_train, test_subbands, y_test,
     return train_loader, test_loader
 
 
-# ────────────────────────────────────────────────────────────
 # Class weights (inverse frequency)
-# ────────────────────────────────────────────────────────────
 def compute_class_weights(labels):
     """Compute sqrt-inverse-frequency class weights, capped at 5.0."""
     counts = np.bincount(labels, minlength=NUM_CLASSES).astype(np.float64)
@@ -99,9 +89,7 @@ def compute_class_weights(labels):
     return torch.tensor(weights, dtype=torch.float32)
 
 
-# ────────────────────────────────────────────────────────────
 # Training
-# ────────────────────────────────────────────────────────────
 def train_one_epoch(model, loader, criterion, optimizer, device):
     model.train()
     total_loss, correct, total = 0.0, 0, 0
@@ -208,9 +196,7 @@ def train_model(model, train_loader, test_loader, device, num_epochs=NUM_EPOCHS,
     return history
 
 
-# ────────────────────────────────────────────────────────────
 # Detailed evaluation
-# ────────────────────────────────────────────────────────────
 def full_evaluation(model, test_loader, device):
     """Run evaluation and return report + confusion matrix."""
     criterion = nn.CrossEntropyLoss()
@@ -243,9 +229,7 @@ def full_evaluation(model, test_loader, device):
     }
 
 
-# ────────────────────────────────────────────────────────────
 # FPGA Export — .mem files for Verilog $readmemb / $readmemh
-# ────────────────────────────────────────────────────────────
 def _bn_to_threshold(bn_weight, bn_bias, bn_mean, bn_var, eps=1e-5):
     """
     Fuse BatchNorm after binary layer into a threshold.

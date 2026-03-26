@@ -1,13 +1,4 @@
-// =============================================================================
 // UART Receiver (8N1, parameterized baud rate)
-// =============================================================================
-//
-// Standard UART RX: 1 start bit, 8 data bits (LSB first), 1 stop bit.
-// Oversamples at 16× baud rate for robust start-bit detection.
-// Double-flip-flop synchronizer for metastability protection.
-//
-// Target: PYNQ-Z2 @ 100 MHz, 115200 baud
-// =============================================================================
 
 module uart_rx #(
     parameter CLK_FREQ  = 100_000_000,

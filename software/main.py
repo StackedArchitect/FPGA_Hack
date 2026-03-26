@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""
-WaveBNN-ECG: Full Pipeline
-===========================
-Run the complete workflow: Load data → Wavelet DWT → Train BNN → Evaluate → Export for FPGA.
-
-Usage:
-    python main.py                          # Full pipeline (train + eval + export)
-    python main.py --epochs 50              # Custom epoch count
-    python main.py --eval-only              # Evaluate saved model (skip training)
-    python main.py --export-only            # Export saved model to .mem files
-"""
+"""WaveBNN-ECG: full pipeline (train + eval + export)."""
 
 import argparse
 import os
@@ -256,9 +246,7 @@ def step_export(model):
     print(f"\n  Done. Use $readmemh / $readmemb in Verilog to load these files.")
 
 
-# ────────────────────────────────────────────────────────────
 # Main
-# ────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="WaveBNN-ECG Pipeline")
     parser.add_argument("--epochs", type=int, default=NUM_EPOCHS, help="Training epochs")

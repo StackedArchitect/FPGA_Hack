@@ -1,22 +1,5 @@
-// =============================================================================
-// WaveBNN-ECG: System Top (ZC702 Evaluation Board)
-// =============================================================================
-//
-// Protocol:
-//   PC -> FPGA: 187 bytes (int8 ECG samples, unsigned over UART)
-//   FPGA -> PC: 1 byte (class 0-4)
-//
-// Data flow:
-//   uart_rx -> sample counter -> wavebnn_core -> uart_tx
-//
-// Status LEDs:
-//   led[0] = alive (heartbeat blink ~1 Hz)
-//   led[1] = busy (inference running)
-//   led[2] = done (last result valid)
-//   led[3] = rx_activity (blink on byte received)
-//
-// Target: ZC702 (xc7z020clg484-1) @ 200 MHz LVDS input, 100 MHz via MMCM
-// =============================================================================
+// WaveBNN-ECG: System Top (ZC702)
+// PC -> FPGA: 187 bytes via UART | FPGA -> PC: 1 byte (class 0-4)
 
 module system_top (
     input  wire       sys_clk_p,     // 200 MHz LVDS+ (ZC702 Bank 35)

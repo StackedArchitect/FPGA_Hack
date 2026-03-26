@@ -1,33 +1,4 @@
-"""
-Haar Wavelet Decomposition (3-Level)
-=====================================
-Decomposes a 187-sample ECG beat into 4 sub-bands using the
-unnormalised Haar wavelet transform.
-
-    Level 1: 188* → cA1(94), cD1(94)
-    Level 2:  94  → cA2(47), cD2(47)
-    Level 3:  48* → cA3(24), cD3(24)
-
-    (* = padded to even length by repeating last sample)
-
-Output sub-bands:
-    cA3(24)  — low-frequency: overall rhythm / baseline wander
-    cD3(24)  — mid-frequency: P-wave and T-wave morphology
-    cD2(47)  — mid-high freq: QRS complex shape  (most discriminative)
-    cD1(94)  — high-frequency: sharp QRS edges + high-freq noise
-
-Hardware note:
-    The Haar wavelet uses ONLY addition and subtraction.
-    No multipliers, no division (we skip the 1/sqrt(2) normalisation
-    since the BNN learns to handle the scaling).
-
-    Bit-width growth:
-        Input:  8-bit signed  → [-128, 127]
-        cD1:   10-bit signed  → [-255, 255]
-        cD2:   11-bit signed  → [-510, 510]
-        cD3:   12-bit signed  → [-1020, 1020]
-        cA3:   12-bit signed  → [-1020, 1020]
-"""
+"""3-level Haar wavelet decomposition (add/sub only, FPGA bit-exact)."""
 
 import numpy as np
 from typing import Dict, Tuple

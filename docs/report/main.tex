@@ -1,0 +1,620 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{float}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{balance}
+
+\graphicspath{{images/}}
+
+\begin{document}
+
+\title{WaveBNN-ECG: Multiplier-Free BNN on FPGA for Real-Time ECG Arrhythmia Classification}
+
+\author{
+\IEEEauthorblockN{K.~V.~Sai Ganesh Arvind\IEEEauthorrefmark{1} and
+Rajamuri Srivardhan Reddy\IEEEauthorrefmark{2}}
+\IEEEauthorblockA{Birla Institute of Technology and Science, Pilani -- Hyderabad Campus\\
+\IEEEauthorrefmark{1}f20220715@hyderabad.bits-pilani.ac.in,
+\IEEEauthorrefmark{2}f20220359@hyderabad.bits-pilani.ac.in\\[4pt]
+Department of Electrical Engineering / Department of Electronics and Communication Engineering}
+\thanks{Source code available at: \url{https://github.com/StackedArchitect/FPGA_Hack}}
+}
+
+\maketitle
+
+\begin{abstract}
+This paper presents WaveBNN-ECG, an FPGA-accelerated edge AI system that combines three-level Haar wavelet decomposition with a parallel multi-branch Binary Neural Network (BNN) for real-time electrocardiogram (ECG) arrhythmia classification. The design classifies heartbeats into five AAMI categories using zero hardware multipliers, achieving 97.4\% accuracy with a macro F1-score of 0.878 on the MIT-BIH Arrhythmia Database~\cite{moody2001mitbih}. The complete inference pipeline is implemented entirely using XNOR gates, popcount trees, and adders on a Xilinx Zynq-7020 FPGA (ZC702 evaluation board). Through iterative RTL pipelining and fanout optimization, the design meets timing closure at 100~MHz with a worst negative slack (WNS) of~+0.786~ns, consuming only 0.42~W total on-chip power. The inference latency is 653 clock cycles (6.53~$\mu$s), utilizing 38.5\% of available LUTs, zero BRAM blocks, and zero DSP48 slices. To the authors' knowledge, this is the first FPGA implementation combining wavelet feature extraction with binary neural networks for ECG classification.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Binary Neural Network, FPGA, ECG classification, arrhythmia detection, Haar wavelet, edge AI, XNOR-Net, real-time inference
+\end{IEEEkeywords}
+
+% =====================================================================
+\section{Introduction}
+% =====================================================================
+
+Cardiovascular diseases (CVDs) remain the leading cause of death globally, accounting for approximately 17.9 million deaths annually~\cite{who2021}. Continuous ECG monitoring through wearable devices offers early arrhythmia detection, enabling timely medical intervention. However, deploying deep learning models for ECG classification on edge devices is constrained by computational resources, power consumption, and real-time latency requirements.
+
+Traditional FPGA-based ECG classifiers rely on convolutional neural networks (CNNs) that utilize DSP blocks for multiplication~\cite{liu2020fpga}. While effective, these designs consume significant power and FPGA resources, limiting their use in battery-powered wearable devices. Binary Neural Networks (BNNs)~\cite{courbariaux2016binarized} offer a compelling alternative by replacing floating-point multiplications with XNOR and popcount operations, dramatically reducing computational complexity.
+
+This paper introduces WaveBNN-ECG, which makes the following contributions:
+
+\begin{enumerate}
+    \item A novel architecture combining multiplier-free Haar wavelet decomposition with parallel multi-branch BNNs, where the wavelet frontend requires only additions and subtractions, and the BNN backend uses only XNOR and popcount.
+    \item A complete FPGA implementation on the Zynq-7020 that uses zero DSP blocks and zero BRAM, operating entirely in distributed LUT logic and flip-flops.
+    \item Detailed documentation of the timing closure process, including pipelining strategies to resolve critical path violations at 100~MHz with quantitative WNS progression.
+    \item Achievement of 97.4\% classification accuracy on the MIT-BIH database with an inference latency of only 6.53~$\mu$s, consuming 0.42~W.
+\end{enumerate}
+
+The remainder of this paper is organized as follows. Section~II reviews related work. Section~III describes the proposed architecture. Section~IV details the hardware implementation. Section~V presents the timing closure and debugging process. Section~VI provides experimental results, and Section~VII concludes the paper.
+
+\begin{table*}[!t]
+    \centering
+    \caption{Comparison with Existing FPGA-Based ECG Classification Systems}
+    \label{tab:comparison}
+    \begin{tabular}{lccccccc}
+        \toprule
+        \textbf{Work} & \textbf{Method} & \textbf{FPGA} & \textbf{Accuracy} & \textbf{Latency} & \textbf{Power} & \textbf{LUTs} & \textbf{DSP} \\
+        \midrule
+        Liu et al.~\cite{liu2020fpga} & 1D-CNN & Zynq-7020 & 98.4\% & 0.5~ms & 1.8~W & 45K & 120 \\
+        Shan et al.~\cite{shan2022real} & Lightweight CNN & Artix-7 & 96.5\% & 1.2~ms & 0.9~W & 28K & 80 \\
+        Bozza et al.~\cite{bozza2023ecg} & Quantized NN & Zynq-7020 & 97.1\% & 0.1~ms & 1.2~W & 35K & 64 \\
+        \textbf{This work} & \textbf{Wavelet+BNN} & \textbf{Zynq-7020} & \textbf{97.4\%} & \textbf{6.53~$\mu$s} & \textbf{0.42~W} & \textbf{20K} & \textbf{0} \\
+        \bottomrule
+    \end{tabular}
+\end{table*}
+
+% =====================================================================
+\section{Related Work}
+% =====================================================================
+
+\subsection{FPGA-Based ECG Classification}
+
+Several FPGA implementations for ECG classification have been reported. Liu et al.~\cite{liu2020fpga} implemented a 1D-CNN on an FPGA, achieving high accuracy but requiring 120 DSP blocks for convolution. Shan et al.~\cite{shan2022real} proposed a lightweight CNN architecture for wearable ECG monitoring that reduces resource usage but still relies on fixed-point multipliers. Bozza et al.~\cite{bozza2023ecg} explored quantized neural networks on FPGAs for cardiac monitoring, demonstrating the trade-off between quantization depth and classification accuracy. All of these approaches require dedicated multiplier hardware (DSP48 slices), which increases both power consumption and area.
+
+\subsection{Binary Neural Networks}
+
+BNNs~\cite{courbariaux2016binarized, rastegari2016xnor} constrain both weights and activations to binary values ($\pm$1), replacing multiply-accumulate (MAC) operations with XNOR and popcount. This enables massive parallelism on FPGAs since binary operations map directly to LUT-based logic. Hubara et al.~\cite{hubara2017quantized} provided a comprehensive treatment of quantized training strategies. FINN~\cite{umuroglu2017finn} demonstrated a framework for deploying BNNs on FPGAs with high throughput. However, the accuracy degradation from binarization remains a challenge, particularly for medical applications where classification errors have clinical consequences.
+
+\subsection{Wavelet-Based Feature Extraction}
+
+Wavelet transforms have been widely used for ECG feature extraction due to their multi-resolution time-frequency analysis capability~\cite{mallat1989wavelet, li2017wavelet}. The Haar wavelet, being the simplest wavelet family, requires only addition and subtraction operations, making it particularly suitable for hardware implementation. Previous work has primarily used wavelets as a preprocessing step for conventional neural networks rather than for BNNs, missing the synergy of combining two multiplier-free paradigms.
+
+\subsection{Gap in Literature}
+
+To our knowledge, no prior work has combined wavelet feature extraction with binary neural networks for FPGA-based ECG classification. This combination is synergistic: wavelets provide multi-resolution features that compensate for the limited representational capacity of BNNs, while both operations avoid hardware multipliers entirely.
+
+% =====================================================================
+\section{Proposed Architecture}
+% =====================================================================
+
+\subsection{System Overview}
+
+The WaveBNN-ECG system processes ECG heartbeats received via UART (115,200~baud, 8N1) through a complete inference pipeline implemented in pure combinational logic and flip-flops. Fig.~\ref{fig:architecture} shows the overall system architecture.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{system_architecture.png}
+    \caption{WaveBNN-ECG system architecture. ECG samples enter via UART RX, pass through 3-level Haar DWT, four parallel BNN branches, binary FC layers, and argmax. The predicted class exits via UART TX. An MMCM generates the 100~MHz system clock from the 200~MHz differential input.}
+    \label{fig:architecture}
+\end{figure}
+
+Each heartbeat consists of 187 time-domain samples, quantized to 8-bit signed integers. The processing pipeline operates as follows:
+
+\begin{enumerate}
+    \item \textbf{Input quantization}: Float-to-int8 mapping with $\pm 3\sigma \rightarrow \pm 127$.
+    \item \textbf{Haar wavelet decomposition}: 3-level DWT producing four sub-bands.
+    \item \textbf{Parallel BNN branches}: Four specialized binary convolution branches operating concurrently.
+    \item \textbf{Binary fully connected layer}: 2048-to-128 bit reduction via XNOR and popcount.
+    \item \textbf{Output classification}: 128-to-5 full-precision FC with argmax.
+\end{enumerate}
+
+\subsection{Haar Wavelet Decomposition}
+
+The three-level Haar discrete wavelet transform (DWT) decomposes each 187-sample heartbeat into four sub-bands, as illustrated in Fig.~\ref{fig:haar}. The Haar wavelet is defined by the averaging (approximation) and differencing (detail) operations:
+
+\begin{equation}
+    cA[n] = x[2n] + x[2n+1]
+\end{equation}
+\begin{equation}
+    cD[n] = x[2n] - x[2n+1]
+\end{equation}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{haar_wavelet_decomp.png}
+    \caption{Three-level Haar wavelet decomposition of an ECG heartbeat. Each level requires only addition and subtraction, with zero multipliers. The resulting sub-bands capture different frequency characteristics of the cardiac cycle.}
+    \label{fig:haar}
+\end{figure}
+
+Critically, the Haar transform uses only integer addition and subtraction, requiring zero multipliers. Three levels of decomposition produce four sub-bands with the characteristics shown in Table~\ref{tab:subbands}. The bit-widths grow by one bit per decomposition level due to the addition operation.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Sub-band Characteristics After 3-Level Haar DWT}
+    \label{tab:subbands}
+    \begin{tabular}{lcccc}
+        \toprule
+        \textbf{Sub-band} & \textbf{Length} & \textbf{Bit-width} & \textbf{Range} & \textbf{Content} \\
+        \midrule
+        cA3 & 24 & 10-bit & [0, 336] & Rhythm \\
+        cD3 & 24 & 9-bit & [$-$133, 166] & P/T wave \\
+        cD2 & 47 & 8-bit & [$-$75, 84] & QRS shape \\
+        cD1 & 94 & 7-bit & [$-$33, 42] & High freq. \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+This decomposition provides the BNN with multi-resolution features: low-frequency rhythm information (cA3), P/T wave morphology (cD3), QRS complex shape (cD2), and high-frequency noise/detail (cD1). Each sub-band is processed independently by a specialized BNN branch, allowing the network to learn frequency-specific discriminative features.
+
+\subsection{Parallel BNN Branch Architecture}
+
+Each sub-band feeds into a dedicated BNN branch consisting of:
+
+\begin{enumerate}
+    \item \textbf{Binary 1D Convolution}: Conditional add/subtract based on binary weight bits, followed by popcount to compute the convolution sum.
+    \item \textbf{Batch Normalization Threshold}: The BN layer is fused into a single integer threshold comparison ($acc > threshold$), eliminating the need for division or multiplication at inference time.
+    \item \textbf{MaxPool(2)}: For binary activations, max-pooling reduces to a bitwise OR of consecutive pairs.
+    \item \textbf{Flatten}: Output bits are concatenated into a flat bit-vector.
+\end{enumerate}
+
+Table~\ref{tab:branches} details the configuration of each branch.
+
+\begin{table}[htbp]
+    \centering
+    \caption{BNN Branch Configurations}
+    \label{tab:branches}
+    \begin{tabular}{lccccc}
+        \toprule
+        \textbf{Branch} & \textbf{Input} & \textbf{Ch.} & \textbf{Kernel} & \textbf{Pool} & \textbf{Bits} \\
+        \midrule
+        cA3 & 24 & 32 & 5 & 10 & 320 \\
+        cD3 & 24 & 32 & 5 & 10 & 320 \\
+        cD2 & 47 & 32 & 5 & 21 & 672 \\
+        cD1 & 94 & 16 & 3 & 46 & 736 \\
+        \midrule
+        \multicolumn{5}{l}{\textbf{Total concatenated}} & \textbf{2048} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The four branches produce $320 + 320 + 672 + 736 = 2048$ binary features. The total binary operation count per inference is 279,840 XNOR+popcount operations, with only 640 real-valued MACs in the final output layer (FC2).
+
+\subsection{Classification Head}
+
+The concatenated 2048-bit vector passes through two fully connected layers:
+
+\begin{enumerate}
+    \item \textbf{BinFC1 ($2048 \rightarrow 128$)}: Binary fully connected layer using XNOR and popcount, followed by batch normalization threshold and sign activation. This produces 128 binary features.
+    \item \textbf{FC2 ($128 \rightarrow 5$)}: Full-precision linear layer producing logits for the five AAMI classes~\cite{aami2012ec57}, followed by argmax for the final classification decision.
+\end{enumerate}
+
+\subsection{Training Methodology}
+
+The model is trained using the Straight-Through Estimator (STE)~\cite{bengio2013estimating} for gradient propagation through the non-differentiable sign function. The training pipeline maintains FPGA bit-exactness by using integer Haar DWT sub-bands rather than floating-point wavelets, ensuring that software and hardware produce identical intermediate values.
+
+Key training parameters are summarized in Table~\ref{tab:training}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Training Hyperparameters}
+    \label{tab:training}
+    \begin{tabular}{ll}
+        \toprule
+        \textbf{Parameter} & \textbf{Value} \\
+        \midrule
+        Dataset     & MIT-BIH (Kaggle)~\cite{kachuee2018ecg} \\
+        Split       & Inter-patient (AAMI) \\
+        Train / Test & 87,554 / 21,892 beats \\
+        Optimizer   & Adam ($lr = 10^{-3}$, $\lambda = 10^{-4}$) \\
+        Epochs      & 150 (best F1 checkpoint) \\
+        Batch size  & 256 \\
+        Binarization & Sign + STE \\
+        Class weights & Inverse-frequency \\
+        Quantization & int8 ($\pm3\sigma \rightarrow \pm 127$) \\
+        Total params & 263,797 \\
+        Binary ops   & 279,840 XNOR+popcount \\
+        Real MACs    & 640 (FC2 only) \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% =====================================================================
+\section{Hardware Implementation}
+% =====================================================================
+
+\subsection{Target Platform}
+
+The design targets the Xilinx Zynq-7000 ZC702 Evaluation Board (xc7z020clg484-1), shown in Fig.~\ref{fig:board}. The board provides a 200~MHz differential LVDS system clock (pins D18/C19), which is converted to 100~MHz using an MMCM (Mixed-Mode Clock Manager). UART communication uses the PMOD1 connector (E15 for TX, D15 for RX) at 115,200~baud through a TXS0108E level shifter.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{zc702_board.png}
+    \caption{Zynq-7000 ZC702 evaluation board (xc7z020clg484-1) used for implementation and hardware testing. UART communication is routed through the PMOD1 (J62) connector.}
+    \label{fig:board}
+\end{figure}
+
+\subsection{RTL Module Hierarchy}
+
+The design is organized into the following Verilog modules:
+
+\begin{itemize}
+    \item \texttt{system\_top}: Board-level wrapper with IBUFDS, MMCM, UART, LED control, and synchronous reset generation.
+    \item \texttt{wavebnn\_core}: Top-level inference FSM that orchestrates data flow through wavelet decomposition, BNN branches, and FC layers.
+    \item \texttt{haar\_wavelet\_3lvl}: Three-level Haar DWT using only integer adders and subtractors.
+    \item \texttt{bnn\_branch}: Parameterized branch module with binary convolution, BN threshold, max-pool, and flatten (3-stage pipeline).
+    \item \texttt{bin\_fc1}: Binary FC layer ($2048 \rightarrow 128$) with 4-stage pipeline.
+    \item \texttt{fc\_output}: Full-precision FC ($128 \rightarrow 5$) with 2-stage pipelined argmax.
+    \item \texttt{popcount}: Parameterized adder-tree popcount (computes Hamming weight).
+    \item \texttt{uart\_rx}, \texttt{uart\_tx}: UART transceiver modules (115,200~baud, 8N1).
+\end{itemize}
+
+\subsection{Binary Convolution Implementation}
+
+The binary convolution in each BNN branch replaces multiplication with conditional addition/subtraction. For a kernel of size $K$ with binary weights $w_k \in \{0, 1\}$ (encoding $\{-1, +1\}$) and input values $x_k$, the convolution output is:
+
+\begin{equation}
+    y = \sum_{k=0}^{K-1} (-1)^{\bar{w}_k} \cdot x_k = \sum_{w_k=1} x_k - \sum_{w_k=0} x_k
+\end{equation}
+
+In hardware, each weight bit selects between addition and subtraction of the corresponding input sample, requiring only adders. The accumulated result is compared against a pre-computed integer threshold (derived from batch normalization parameters during export) to produce a single output bit per channel per position.
+
+\subsection{Batch Normalization Fusion}
+
+During training, batch normalization computes:
+\begin{equation}
+    \hat{y} = \frac{y - \mu}{\sqrt{\sigma^2 + \epsilon}} \cdot \gamma + \beta
+\end{equation}
+
+For sign activation ($\text{sign}(\hat{y})$), this reduces to a threshold comparison $y > T$ where:
+\begin{equation}
+    T = \frac{-\beta}{\gamma} \cdot \sqrt{\sigma^2 + \epsilon} + \mu
+\end{equation}
+
+This threshold is pre-computed in software and exported as a fixed-point integer for hardware, eliminating all division and multiplication from the inference path.
+
+\subsection{Pipeline Architecture}
+
+Meeting timing at 100~MHz required deep pipelining of three critical modules, as shown in Fig.~\ref{fig:pipeline}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{bnn_branch_pipeline.png}
+    \caption{Three-stage pipeline of the \texttt{bnn\_branch} module. Window pre-fetch registers break the critical path from the position counter through 160 multiplexers to the accumulation logic.}
+    \label{fig:pipeline}
+\end{figure}
+
+\subsubsection{BNN Branch (3-Stage Pipeline)}
+
+The BNN branch processes one convolution position per clock cycle in steady state through three overlapped stages:
+
+\begin{itemize}
+    \item \textbf{Stage 0 (Prefetch)}: Read $K$ values from the input buffer into \texttt{window} registers. The position counter (\texttt{pos}) drives only $K$ multiplexer loads instead of $C \times K$ loads ($C$ channels, each reading $K$ taps).
+    \item \textbf{Stage 1 (Compute)}: All $C$ channels simultaneously accumulate from the registered window values using conditional add/subtract.
+    \item \textbf{Stage 2 (Threshold)}: Compare accumulated values against BN thresholds to produce binary output bits.
+\end{itemize}
+
+\subsubsection{Binary FC Layer (4-Stage Pipeline)}
+
+The \texttt{bin\_fc1} module computes 128 output neurons, each performing XNOR and popcount on a 2048-bit input:
+
+\begin{itemize}
+    \item \textbf{Stage 1}: Bitwise XNOR between input vector and weight row.
+    \item \textbf{Stage 2}: Adder-tree popcount of the XNOR result.
+    \item \textbf{Stage 3}: Partial sum accumulation across groups.
+    \item \textbf{Stage 4}: Comparison against BN threshold.
+\end{itemize}
+
+\subsubsection{Argmax (2-Stage Pipeline)}
+
+The \texttt{fc\_output} module computes argmax of 5 logits using a pipelined comparison tree: Stage 1 performs pairwise comparisons (0 vs 1, 2 vs 3), and Stage 2 performs the final 3-way comparison among the two pairwise winners and element~4.
+
+% =====================================================================
+\section{Timing Closure and Debugging}
+% =====================================================================
+
+This section documents the iterative RTL optimization process that achieved timing closure at 100~MHz, demonstrating practical FPGA design methodology for BNN accelerators.
+
+\subsection{Initial Timing Violations}
+
+The initial synthesis and implementation revealed severe timing violations with a worst negative slack (WNS) of approximately $-9.768$~ns, meaning many paths could not meet the 10~ns clock period. The violations were concentrated in three modules.
+
+\subsection{Root Cause Analysis}
+
+Detailed path analysis using Vivado's timing reports identified three root causes:
+
+\subsubsection{BNN Branch Position Register Fanout}
+
+The most critical violation occurred in the \texttt{bnn\_branch} module. The \texttt{pos} register, which indexes into the input buffer, was driving $C \times K = 32 \times 5 = 160$ multiplexer select lines simultaneously (32 output channels, each reading 5 kernel taps). This produced a net routing delay exceeding 6.1~ns due to routing congestion.
+
+\subsubsection{Binary FC Layer Logic Depth}
+
+The \texttt{bin\_fc1} module had a combinational path spanning 13 logic levels: XNOR $\rightarrow$ popcount tree $\rightarrow$ partial sum accumulation $\rightarrow$ threshold comparison, all within a single clock cycle.
+
+\subsubsection{Argmax Comparison Chain}
+
+The \texttt{fc\_output} module performed a single-cycle 5-way comparison chain for argmax, creating an unnecessarily deep combinational path.
+
+\subsection{Fix 1: BNN Branch Window Pre-Fetch}
+
+The key insight was reducing the \texttt{pos} fanout from 160 to $K=5$ by introducing a window pre-fetch stage:
+
+\begin{enumerate}
+    \item \textbf{Pre-fetch}: Read \texttt{input\_buf[pos+0]} through \texttt{input\_buf[pos+4]} into five registered \texttt{window} values (5 mux loads on \texttt{pos}).
+    \item \textbf{Compute}: All 32 channels read from the fixed-address \texttt{window} registers (zero additional mux loads on \texttt{pos}).
+\end{enumerate}
+
+This restructuring required careful FSM design with explicit \texttt{S\_PREFETCH}, \texttt{S\_COMPUTE}, \texttt{S\_DRAIN1}, \texttt{S\_DRAIN2}, and \texttt{S\_POOL} states to handle pipeline priming and draining.
+
+\subsubsection{Pipeline Alignment Bug}
+
+An initial implementation contained a subtle alignment bug where position~0's threshold result was never stored. The issue was traced through cycle-by-cycle waveform analysis:
+
+\begin{itemize}
+    \item Cycle 0: \texttt{pos\_d = 0}, accumulator valid flag is 0.
+    \item Cycle 1: Accumulator computes result for position 0, sets valid flag to 1, but threshold valid is still 0 (one cycle behind).
+    \item Cycle 2: Threshold valid becomes 1, but the position tracker has already advanced to 1, causing position 0 to be skipped.
+\end{itemize}
+
+The fix replaced the cascaded delay chain with explicit \texttt{compute\_pos} and \texttt{thresh\_pos} registers, ensuring each position's result is stored exactly once. Functional verification confirmed 10/10 test vectors passing with 653-cycle latency.
+
+\subsection{Fix 2: Binary FC 4-Stage Pipeline}
+
+The \texttt{bin\_fc1} module was split from a single combinational path into a 4-stage pipeline (XNOR $\rightarrow$ popcount $\rightarrow$ partial sums $\rightarrow$ threshold), with each stage's output registered. A fill-counter mechanism tracks pipeline occupancy for correct output timing.
+
+\subsection{Fix 3: Argmax 2-Stage Pipeline}
+
+The 5-way single-cycle argmax was split into two registered stages: pairwise comparison followed by a final 3-way selection.
+
+\subsection{Fix 4: Fanout Control Attributes}
+
+Verilog synthesis attributes were applied to high-fanout registers to instruct the synthesizer to replicate them:
+
+\begin{itemize}
+    \item \texttt{max\_fanout = 32} on \texttt{input\_buf} in \texttt{bnn\_branch}
+    \item \texttt{max\_fanout = 16} on \texttt{pos} in \texttt{bnn\_branch}
+    \item \texttt{max\_fanout = 32} on \texttt{core\_sample} in \texttt{system\_top}
+\end{itemize}
+
+\subsection{Timing Closure Progression}
+
+Table~\ref{tab:timing_progression} summarizes the WNS improvement through each optimization iteration, demonstrating the cumulative effect of the pipelining fixes.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Timing Closure Progression (Post-Implementation)}
+    \label{tab:timing_progression}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{Design Iteration} & \textbf{WNS (ns)} & \textbf{Status} \\
+        \midrule
+        Baseline (no pipeline)       & $-$9.768  & Fail \\
+        + \texttt{bin\_fc1} 4-stage  & $-$3.2    & Fail \\
+        + \texttt{fc\_output} 2-stage & $-$0.003 & Fail \\
+        + \texttt{bnn\_branch} fanout ctrl & $-$0.003 & Fail \\
+        + Window pre-fetch pipeline  & \textbf{+0.786}  & \textbf{Pass} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% =====================================================================
+\section{Experimental Results}
+% =====================================================================
+
+\subsection{Classification Performance}
+
+The WaveBNN-ECG model was trained for 150 epochs on the MIT-BIH Arrhythmia Database (Kaggle pre-processed version~\cite{kachuee2018ecg}) using an inter-patient train/test split following AAMI recommendations~\cite{aami2012ec57}. The training set contains 87,554 beats and the test set contains 21,892 beats across five classes: Normal (N), Supraventricular (S), Ventricular (V), Fusion (F), and Unknown/Paced (Q).
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{training_curves.png}
+    \caption{Training curves over 150 epochs. The best model checkpoint at epoch 148 achieves 97.4\% test accuracy and 0.878 macro F1-score.}
+    \label{fig:training}
+\end{figure}
+
+Table~\ref{tab:classification} presents the per-class classification results. The model achieves strong performance on the majority class (N: F1 = 0.986) and the clinically critical Ventricular class (V: F1 = 0.927). The minority classes S and F show lower F1 scores (0.745 and 0.758 respectively), which is expected given the severe class imbalance (N:F ratio of 113:1).
+
+\begin{table}[htbp]
+    \centering
+    \caption{Per-Class Classification Results on MIT-BIH Test Set}
+    \label{tab:classification}
+    \begin{tabular}{lcccr}
+        \toprule
+        \textbf{Class} & \textbf{Prec.} & \textbf{Rec.} & \textbf{F1} & \textbf{Support} \\
+        \midrule
+        N (Normal)           & 0.983 & 0.990 & 0.986 & 18,118 \\
+        S (Supraventricular) & 0.796 & 0.700 & 0.745 & 556 \\
+        V (Ventricular)      & 0.939 & 0.915 & 0.927 & 1,448 \\
+        F (Fusion)           & 0.734 & 0.784 & 0.758 & 162 \\
+        Q (Unknown)          & 0.985 & 0.965 & 0.975 & 1,608 \\
+        \midrule
+        \textbf{Overall}     & \multicolumn{3}{c}{\textbf{Accuracy: 97.40\%}} & 21,892 \\
+        \textbf{Macro Avg}   & 0.887 & 0.871 & 0.878 & \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\columnwidth]{confusion_matrix.png}
+    \caption{Normalized confusion matrix. The dominant N class achieves 99\% recall. Most S misclassifications are to N, and most V misclassifications are also to N, consistent with morphological similarity.}
+    \label{fig:confusion}
+\end{figure}
+
+\subsection{FPGA Resource Utilization}
+
+The design was synthesized and implemented using Vivado 2024.2 targeting the xc7z020clg484-1 device. Table~\ref{tab:utilization} presents the resource utilization.
+
+\begin{table}[htbp]
+    \centering
+    \caption{FPGA Resource Utilization (Post-Implementation)}
+    \label{tab:utilization}
+    \begin{tabular}{lccc}
+        \toprule
+        \textbf{Resource} & \textbf{Used} & \textbf{Available} & \textbf{Util.\%} \\
+        \midrule
+        Slice LUTs       & 20,465  & 53,200  & 38.47 \\
+        Slice Registers  & 19,317  & 106,400 & 18.16 \\
+        F7 Muxes         & 905     & 26,600  & 3.40 \\
+        Slices           & 7,507   & 13,300  & 56.44 \\
+        Block RAM        & 0       & 140     & 0.00 \\
+        DSP48            & 0       & 220     & 0.00 \\
+        MMCM             & 1       & 4       & 25.00 \\
+        Bonded IOB       & 9       & 200     & 4.50 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Notably, the design uses \textbf{zero BRAM} and \textbf{zero DSP blocks}. All storage is in distributed flip-flops and all computation uses LUT-based logic. Fig.~\ref{fig:utilization} shows the hierarchical utilization from Vivado.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{utilization_summary.jpeg}
+    \caption{Vivado hierarchical utilization report. The \texttt{bin\_fc1} module ($2048 \rightarrow 128$) is the largest consumer at 4,748 LUTs, followed by the four \texttt{bnn\_branch} instances and the \texttt{haar\_wavelet\_3lvl} module.}
+    \label{fig:utilization}
+\end{figure}
+
+Table~\ref{tab:module_util} provides the detailed per-module breakdown.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Per-Module Resource Breakdown}
+    \label{tab:module_util}
+    \begin{tabular}{lrrr}
+        \toprule
+        \textbf{Module} & \textbf{LUTs} & \textbf{Regs} & \textbf{Slices} \\
+        \midrule
+        haar\_wavelet\_3lvl   & 3,634  & 4,807  & 1,437 \\
+        bnn\_branch (cA3)     & 1,635  & 1,634  & 838   \\
+        bnn\_branch (cD3)     & 1,769  & 1,654  & 940   \\
+        bnn\_branch (cD2)     & 2,203  & 2,907  & 1,431 \\
+        bnn\_branch (cD1)     & 1,805  & 3,154  & 1,437 \\
+        bin\_fc1              & 4,748  & 4,582  & 2,060 \\
+        fc\_output            & 319    & 365    & 141   \\
+        uart\_rx              & 63     & 34     & 29    \\
+        uart\_tx              & 27     & 19     & 9     \\
+        \midrule
+        \textbf{Total}        & \textbf{20,465} & \textbf{19,317} & \textbf{7,507} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Timing Analysis}
+
+The design achieves timing closure at 100~MHz with positive margins on all paths, as shown in Fig.~\ref{fig:timing} and Fig.~\ref{fig:timing_paths}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{timing_summary.jpeg}
+    \caption{Post-implementation timing summary from Vivado. All constraints are met: WNS = +0.786~ns (setup), WHS = +0.006~ns (hold), WPWS = +1.100~ns (pulse width). Zero failing endpoints across 45,762 analyzed paths.}
+    \label{fig:timing}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{timing_paths.jpeg}
+    \caption{Detailed view of top timing paths. All paths meet timing with positive slack. Warning-level paths (highlighted) have small but positive margins (0.786 to 1.2~ns), confirming the design is within specification.}
+    \label{fig:timing_paths}
+\end{figure}
+
+\subsection{Power Analysis}
+
+Fig.~\ref{fig:power} shows the power breakdown from the post-implementation analysis. The total on-chip power is 0.42~W.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{power_summary.jpeg}
+    \caption{On-chip power analysis: 0.42~W total (0.31~W dynamic, 0.11~W static). The MMCM is the largest single dynamic power consumer at 0.107~W.}
+    \label{fig:power}
+\end{figure}
+
+Table~\ref{tab:power} summarizes the power distribution. The MMCM dominates dynamic power at 35\%, which could be reduced in an ASIC implementation or by using an external oscillator at the target frequency.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Power Breakdown (Post-Implementation)}
+    \label{tab:power}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{Component} & \textbf{Power (W)} & \textbf{Fraction} \\
+        \midrule
+        Dynamic Total       & 0.310 & 74\% \\
+        \quad Clocks         & 0.036 & 12\% \\
+        \quad Signals        & 0.082 & 26\% \\
+        \quad Logic          & 0.082 & 26\% \\
+        \quad MMCM           & 0.107 & 35\% \\
+        \quad I/O            & 0.004 & 1\% \\
+        Static              & 0.110 & 26\% \\
+        \midrule
+        \textbf{Total}      & \textbf{0.420} & \textbf{100\%} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The junction temperature is 29.8$^\circ$C with a thermal margin of 55.2$^\circ$C, well within safe operating limits for continuous monitoring applications.
+
+\subsection{Inference Latency}
+
+The complete inference latency from first input sample to classification output is 653 clock cycles, corresponding to \textbf{6.53~$\mu$s} at 100~MHz. The total UART round-trip time is dominated by serial transfer:
+
+\begin{itemize}
+    \item UART TX (187 bytes at 115,200~baud): 16.2~ms
+    \item FPGA inference: 6.53~$\mu$s
+    \item UART RX (1 byte result): 86.8~$\mu$s
+    \item \textbf{Total round-trip}: 16.3~ms
+\end{itemize}
+
+The inference alone (6.53~$\mu$s) is well within clinical requirements for real-time beat-by-beat classification, which typically requires sub-second latency. The UART bottleneck can be eliminated by direct ADC interfacing (see Section~VII).
+
+\subsection{Comparison with Related Work}
+
+Table~\ref{tab:comparison} compares WaveBNN-ECG with existing FPGA-based ECG classifiers. Our design achieves competitive accuracy (97.4\%) while using \textbf{zero DSP blocks}, significantly fewer LUTs (20K vs 28K--45K), and consuming \textbf{4.3$\times$ less power} than the closest comparable work (0.42~W vs 1.8~W). The inference latency of 6.53~$\mu$s is 15$\times$ to 183$\times$ faster than existing designs.
+
+\subsection{Functional Verification}
+
+The design underwent both unit-level and system-level verification:
+
+\begin{itemize}
+    \item \textbf{Core testbench}: 10 test vectors exported from the trained model, all passing with 653-cycle latency. Class distribution: 3$\times$N, 2$\times$S, 2$\times$V, 1$\times$F, 2$\times$Q.
+    \item \textbf{System testbench}: Full UART communication loop with 200~MHz differential clock, MMCM lock sequence, and concurrent TX/RX using SystemVerilog fork/join.
+\end{itemize}
+
+The simulation uses FPGA bit-exact integer wavelet decomposition, ensuring that the Python training pipeline and the Verilog hardware produce identical intermediate values at every stage.
+
+% =====================================================================
+\section{Conclusion and Future Work}
+% =====================================================================
+
+This paper presented WaveBNN-ECG, an FPGA implementation combining Haar wavelet decomposition with a parallel multi-branch Binary Neural Network for real-time ECG arrhythmia classification. The design achieves 97.4\% accuracy on the MIT-BIH database while using zero hardware multipliers, consuming only 0.42~W, and completing inference in 6.53~$\mu$s at 100~MHz on a Zynq-7020 FPGA.
+
+The key innovation is the synergistic combination of multiplier-free Haar wavelet preprocessing with XNOR/popcount-based BNN inference, enabling a complete AI inference pipeline using only LUT logic and flip-flops. Through systematic pipelining and fanout optimization, timing closure was achieved with +0.786~ns margin. This approach is well suited for battery-powered wearable ECG monitors where power and area are critical constraints.
+
+Future work includes the following directions:
+
+\begin{enumerate}
+    \item \textbf{Live ECG signal acquisition}: Integrating an analog front-end (AFE) with an ADC (e.g., ADS1292R or AD8232 + on-chip XADC) to acquire live ECG signals directly on the FPGA. The Zynq-7020 includes a dual 12-bit 1~MSPS XADC that can digitize single-lead ECG signals. Combined with a real-time beat segmentation module (R-peak detection via Pan-Tompkins algorithm implemented in FPGA logic), this would create a fully self-contained arrhythmia monitoring system capable of continuous beat-by-beat classification without any host PC dependency, enabling deployment in ambulatory Holter-style monitors.
+    \item \textbf{Higher-order wavelets}: Exploring Daubechies-2 or biorthogonal wavelets that provide better frequency isolation at the cost of additional adder stages.
+    \item \textbf{Multi-lead ECG}: Extending the architecture to support 12-lead clinical ECG for comprehensive cardiac assessment.
+    \item \textbf{Power optimization}: Implementing clock gating during idle periods and duty-cycling the inference pipeline to reduce average power in continuous monitoring scenarios.
+    \item \textbf{Ternary weight networks}: Exploring 2-bit weights ($\{-1, 0, +1\}$) to bridge the accuracy gap with full-precision networks while maintaining zero-multiplier operation.
+\end{enumerate}
+
+% =====================================================================
+% References
+% =====================================================================
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\balance
+
+\end{document}
