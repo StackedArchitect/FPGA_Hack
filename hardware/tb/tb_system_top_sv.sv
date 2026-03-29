@@ -228,12 +228,7 @@ module tb_system_top_sv;
         #500_000_000;
         $display("");
         $display("[%0t] FATAL: Watchdog timeout (500 ms)!", $time);
-        $display("  led=%b  Core state=%0d  wav_state=%0d  wav_cnt=%0d",
-                 led, u_dut.u_core.state, u_dut.u_core.u_wavelet.state,
-                 u_dut.u_core.u_wavelet.sample_cnt);
-        $display("  sys_cnt=%0d  result_ready=%b  tx_busy=%b  mmcm_locked=%b  rst_n=%b",
-                 u_dut.sample_cnt, u_dut.result_ready, u_dut.tx_busy,
-                 u_dut.mmcm_locked, u_dut.rst_n);
+        $display("  led=%b  uart_txd=%b", led, uart_txd);
         $finish;
     end
 

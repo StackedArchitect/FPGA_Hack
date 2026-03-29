@@ -1,44 +1,46 @@
-// WaveBNN-ECG: System Top (ZC702)
-// PC -> FPGA: 187 bytes via UART | FPGA -> PC: 1 byte (class 0-4)
+// =============================================================================
+// WaveBNN-ECG: System Top (PYNQ-Z2)
+// =============================================================================
+//
+// Protocol:
+//   PC -> FPGA: 187 bytes (int8 ECG samples, unsigned over UART)
+//   FPGA -> PC: 1 byte (class 0-4)
+//
+// Data flow:   
+//   uart_rx -> sample counter -> wavebnn_core -> uart_tx
+//
+// Status LEDs:
+//   led[0] = alive (heartbeat blink ~1 Hz)
+//   led[1] = busy (inference running)
+//   led[2] = done (last result valid)
+//   led[3] = rx_activity (blink on byte received)
+//
+// Target: PYNQ-Z2 (xc7z020clg484-1) @ 125 MHz external, 100 MHz via MMCM
+// =============================================================================
 
 module system_top (
-    input  wire       sys_clk_p,     // 200 MHz LVDS+ (ZC702 Bank 35)
-    input  wire       sys_clk_n,     // 200 MHz LVDS-
-    input  wire       rst_n_btn,     // active-low pushbutton (GPIO_SW_N)
+    input  wire       clk_125,       // 125 MHz board clock
+    input  wire       rst_n_btn,     // active-low pushbutton (BTN0)
 
-    // -- UART (PMOD1 J62) --
+    // -- UART --
     input  wire       uart_rxd,      // UART RX (from PC)
     output wire       uart_txd,      // UART TX (to PC)
 
-    // -- Status LEDs (DS15-DS18) --
+    // -- Status LEDs --
     output wire [3:0] led
 );
 
     // ---------------------------------------------
-    // Clock generation: 200 MHz LVDS -> 100 MHz via MMCM
-    // In simulation, bypass IBUFDS+MMCM (TB provides 100 MHz directly)
+    // Clock generation: 125 MHz -> 100 MHz via MMCM
     // ---------------------------------------------
     wire clk_100, clk_fb, mmcm_locked;
 
-`ifdef SIMULATION
-    // ── Simulation bypass: TB drives 100 MHz on sys_clk_p port ──
-    assign clk_100     = sys_clk_p;
-    assign mmcm_locked = 1'b1;
-`else
-    // ── Synthesis: IBUFDS + MMCM ──
-    wire clk_200;
-    IBUFDS u_ibufds (
-        .I  (sys_clk_p),
-        .IB (sys_clk_n),
-        .O  (clk_200)
-    );
-
     MMCME2_BASE #(
-        .CLKIN1_PERIOD  (5.000),   // 200 MHz = 5 ns
-        .CLKFBOUT_MULT_F(5.0),    // VCO = 200 * 5 = 1000 MHz
-        .CLKOUT0_DIVIDE_F(10.0)   // 1000 / 10 = 100 MHz
+        .CLKIN1_PERIOD (8.000),   // 125 MHz = 8 ns
+        .CLKFBOUT_MULT_F (8.0),  // VCO = 125 * 8 = 1000 MHz
+        .CLKOUT0_DIVIDE_F(10.0)  // 1000 / 10 = 100 MHz
     ) u_mmcm (
-        .CLKIN1  (clk_200),
+        .CLKIN1  (clk_125),
         .CLKFBIN (clk_fb),
         .CLKFBOUT(clk_fb),
         .CLKOUT0 (clk_100),
@@ -46,7 +48,6 @@ module system_top (
         .PWRDWN  (1'b0),
         .RST     (~rst_n_btn)
     );
-`endif
 
     wire clk = clk_100;
 
@@ -86,7 +87,6 @@ module system_top (
     reg [7:0] sample_cnt;
     reg       core_start;
     reg       core_sample_valid;
-    (* max_fanout = 32 *)
     reg signed [7:0] core_sample;
 
     wire core_busy;
