@@ -280,4 +280,5 @@ python software/ecg_animation.py --format gif      # GIF for slides
 | Name | Department | Email |
 |---|---|---|
 | **K. V. Sai Ganesh Arvind** | Electrical and Electronics Engineering | f20220715@hyderabad.bits-pilani.ac.in |
+
 **BITS Pilani — Hyderabad Campus**
